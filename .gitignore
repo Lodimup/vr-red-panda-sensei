@@ -1,0 +1,10 @@
+.DS_Store
+bin/
+obj/
+*.user
+.vs/
+.idea/
+.env
+# local learner profiles and traces written by the CLI
+.sensei/
+TestResults/
