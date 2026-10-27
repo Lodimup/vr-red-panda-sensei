@@ -18,7 +18,9 @@ public sealed record FakeRequest(string Method, string Path, string? Authorizati
 /// </summary>
 public sealed class FakeChatServer : IDisposable
 {
-    private readonly HttpListener _listener = new();
+    private static readonly object PortGate = new();
+
+    private readonly HttpListener _listener;
     private readonly object _sync = new();
     private readonly Queue<(int Status, string Body, TimeSpan Delay)> _replies = new();
     private readonly List<FakeRequest> _requests = new();
@@ -26,10 +28,28 @@ public sealed class FakeChatServer : IDisposable
 
     public FakeChatServer()
     {
-        var port = FreePort();
-        BaseUrl = $"http://127.0.0.1:{port}/v1";
-        _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        _listener.Start();
+        // Pick a free port and bind it under one process-wide lock; retry if another process took it in between.
+        lock (PortGate)
+        {
+            for (var attempt = 0; ; attempt++)
+            {
+                var port = FreePort();
+                var listener = new HttpListener();
+                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                try
+                {
+                    listener.Start();
+                }
+                catch (HttpListenerException) when (attempt < 20)
+                {
+                    listener.Close();
+                    continue;
+                }
+                _listener = listener;
+                BaseUrl = $"http://127.0.0.1:{port}/v1";
+                break;
+            }
+        }
         _loop = Task.Run(Loop);
     }
 
@@ -70,11 +90,11 @@ public sealed class FakeChatServer : IDisposable
     {
         try
         {
-            _listener.Stop();
             _listener.Close();
         }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is ObjectDisposedException or HttpListenerException)
         {
+            // The managed listener may try to re-bind its port while closing; nothing to clean up either way.
         }
         try
         {
