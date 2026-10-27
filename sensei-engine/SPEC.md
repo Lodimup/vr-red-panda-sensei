@@ -450,6 +450,8 @@ These stories were added after an adversarial review of this spec. **Where one o
 
 - **S123** (S38a) In `show_hint` `content`, an empty string is treated as an absent field: it is accepted, not shown and not spoken. At least one field must be non-empty, else `invalid_arguments`.
 
+- **S124** (S89) `SpeechOutcome.SegmentsPresented` is optional (`int?`). When it is given, it wins, clamped to `0..segment count`. When it is omitted: `completed` counts as every segment presented; `cancelled` and `failed` count as 0 presented.
+
 ## Decisions (differences from the PRD)
 
 1. The LLM loop uses Microsoft Agent Framework 1.26.0 in a separate `sensei-engine` library (Handler, 2026-10-27), not the RageAgainstThePixel package named in PRD §10. Quest IL2CPP compatibility is still to be proven on a device (PRD A20); S3 keeps the code AOT-friendly. RULING(Handler 2026-10-27)
