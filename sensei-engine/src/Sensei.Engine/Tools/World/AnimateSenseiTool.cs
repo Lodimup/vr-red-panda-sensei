@@ -41,12 +41,14 @@ public sealed class AnimateSenseiTool : SenseiTool<AnimateSenseiArgs>
 
     public override Task<ToolResult> ExecuteAsync(AnimateSenseiArgs args, ToolContext context, CancellationToken ct)
     {
-        var result = context.Locked(() =>
-            args.TargetId is not null && !context.World.Exists(args.TargetId)
-                ? context.Failure(ToolErrorCodes.UnknownObject, $"target_id: unknown object '{args.TargetId}'")
-                : context.Success());
+        return Task.FromResult(context.Locked(() =>
+        {
+            if (args.TargetId is not null && !context.World.Exists(args.TargetId))
+                return context.Failure(ToolErrorCodes.UnknownObject, $"target_id: unknown object '{args.TargetId}'");
 
-        if (result.IsSuccess) context.Events.Animate(args.Animation, args.TargetId);
-        return Task.FromResult(result);
+            // S22, S69: the event follows the settled call, never a call that then settles as cancelled.
+            context.QueueAfterCommit(() => context.Events.Animate(args.Animation, args.TargetId));
+            return context.Success();
+        }));
     }
 }
