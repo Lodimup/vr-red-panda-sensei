@@ -866,7 +866,7 @@ public sealed class PipelineTests
     {
         lock (t.Core.Sync)
         {
-            id = t.Core.World.CommitSpawn(new[] { new SpawnRequest("apple", "default", SceneRegions.Center) }, SceneActors.Sensei, t.Core.CurrentTurnId).InstanceIds[0];
+            id = t.Core.World.CommitSpawn(new[] { new SpawnRequest("apple", SceneRegions.Center) }, SceneActors.Sensei, t.Core.CurrentTurnId).InstanceIds[0];
         }
         t.Core.FlushNotifications();
         t.Engine.MarkRoundStart();

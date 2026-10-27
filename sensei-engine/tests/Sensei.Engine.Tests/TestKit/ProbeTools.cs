@@ -98,7 +98,7 @@ public class ProbeTool : SenseiTool<ProbeArgs>
                 return context.Locked(() =>
                 {
                     if (context.World.Count >= SceneWorld.Capacity) return context.Failure(ToolErrorCodes.CapacityExceeded, "full");
-                    var e = context.World.CommitSpawn(new[] { new SpawnRequest("apple", "default", SceneRegions.Center) }, SceneActors.Sensei, context.TurnId);
+                    var e = context.World.CommitSpawn(new[] { new SpawnRequest("apple", SceneRegions.Center) }, SceneActors.Sensei, context.TurnId);
                     return context.Success(e.InstanceIds);
                 });
             case "slow":
@@ -108,7 +108,7 @@ public class ProbeTool : SenseiTool<ProbeArgs>
             {
                 var spawned = context.Locked(() =>
                 {
-                    var e = context.World.CommitSpawn(new[] { new SpawnRequest("apple", "default", SceneRegions.Center) }, SceneActors.Sensei, context.TurnId);
+                    var e = context.World.CommitSpawn(new[] { new SpawnRequest("apple", SceneRegions.Center) }, SceneActors.Sensei, context.TurnId);
                     return context.Success(e.InstanceIds);
                 });
                 await Task.Delay(args.DelayMs ?? 300, ct);

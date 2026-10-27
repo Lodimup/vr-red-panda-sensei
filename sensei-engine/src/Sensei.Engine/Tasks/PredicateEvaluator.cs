@@ -70,11 +70,10 @@ public static class PredicateEvaluator
         }
     }
 
-    /// <summary>Does <paramref name="instance"/> match <paramref name="selector"/> (catalog id, variant, scenario property)?</summary>
+    /// <summary>Does <paramref name="instance"/> match <paramref name="selector"/> (catalog id, scenario property)?</summary>
     public static bool Matches(ObjectInstance instance, PredicateSelector selector, IReadOnlyList<ScenarioProperty> scenarioProperties)
     {
         if (instance.CatalogId != selector.CatalogId) return false;
-        if (selector.Variant is not null && instance.Variant != selector.Variant) return false;
         if (selector.Property is not null &&
             !scenarioProperties.Any(sp => sp.ObjectId == instance.Id && sp.Name == selector.Property.Name && sp.Value == selector.Property.Value))
             return false;

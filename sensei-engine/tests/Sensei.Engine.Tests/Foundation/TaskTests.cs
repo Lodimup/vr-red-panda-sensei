@@ -17,9 +17,9 @@ public sealed class TaskTests
         Type = type, ObjectId = obj, Region = region, ContainerId = container, ReferenceId = reference, Selector = selector, Count = count, Comparison = comparison,
     };
 
-    private static PredicateSelector Sel(string catalogId, string? variant = null, string? propName = null, string? propValue = null) => new()
+    private static PredicateSelector Sel(string catalogId, string? propName = null, string? propValue = null) => new()
     {
-        CatalogId = catalogId, Variant = variant, Property = propName is null ? null : new SelectorProperty { Name = propName, Value = propValue! },
+        CatalogId = catalogId, Property = propName is null ? null : new SelectorProperty { Name = propName, Value = propValue! },
     };
 
     private static ToolFailure? Validate(TestEngine t, IReadOnlyList<TaskPredicate> predicates, IReadOnlyList<ScenarioProperty>? scenario = null)
@@ -172,14 +172,13 @@ public sealed class TaskTests
     }
 
     [Theory]
-    [InlineData("pizza", null, null, "catalog")]
-    [InlineData("cup", "green", null, "variant")]
-    [InlineData("apple", null, "owner", "property")]
-    public async Task S35b_selector_must_name_catalog_variant_and_declared_property(string catalogId, string? variant, string? prop, string expected)
+    [InlineData("pizza", null, "catalog")]
+    [InlineData("apple", "owner", "property")]
+    public async Task S35b_selector_must_name_catalog_and_declared_property(string catalogId, string? prop, string expected)
     {
         await using var t = await TestEngine.CreateAsync();
         Spawn(t, ("apple", "center"), ("cup", "center"));
-        var f = Validate(t, new[] { P("in_region", selector: Sel(catalogId, variant, prop, prop is null ? null : "mine"), region: "left") });
+        var f = Validate(t, new[] { P("in_region", selector: Sel(catalogId, prop, prop is null ? null : "mine"), region: "left") });
         Assert.Equal(ToolErrorCodes.ImpossibleTask, f!.Code);
         Assert.Contains(expected, f.Detail);
     }
@@ -190,7 +189,7 @@ public sealed class TaskTests
         await using var t = await TestEngine.CreateAsync();
         var a = Spawn(t, "apple");
         var scenario = new[] { new ScenarioProperty { ObjectId = a, Name = "owner", Value = "mine" } };
-        Assert.Null(Validate(t, new[] { P("in_region", selector: Sel("apple", null, "owner", "mine"), region: "left") }, scenario));
+        Assert.Null(Validate(t, new[] { P("in_region", selector: Sel("apple", "owner", "mine"), region: "left") }, scenario));
     }
 
     [Theory]
@@ -347,19 +346,9 @@ public sealed class TaskTests
     {
         await using var t = await TestEngine.CreateAsync();
         var cups = Spawn(t, ("cup", "center"), ("cup", "center"));
-        Start(t, P("in_region", selector: Sel("cup", "blue"), region: "right"));
+        Start(t, P("in_region", selector: Sel("cup"), region: "right"));
         t.Engine.PlayerMove(cups[1], SceneRegions.Right, null);
         Assert.Equal(TaskStatuses.Completed, Status(t));
-    }
-
-    [Fact]
-    public async Task S35d_selector_variant_must_match()
-    {
-        await using var t = await TestEngine.CreateAsync();
-        var cup = Spawn(t, "cup");
-        Start(t, P("in_region", selector: Sel("cup", "red"), region: "right"));
-        t.Engine.PlayerMove(cup, SceneRegions.Right, null);
-        Assert.Equal(TaskStatuses.Active, Status(t));
     }
 
     [Fact]
@@ -368,7 +357,7 @@ public sealed class TaskTests
         await using var t = await TestEngine.CreateAsync();
         var apples = Spawn(t, ("apple", "center"), ("apple", "center"));
         var scenario = new[] { new ScenarioProperty { ObjectId = apples[1], Name = "owner", Value = "sensei" } };
-        StartWith(t, new[] { P("in_region", selector: Sel("apple", null, "owner", "sensei"), region: "left") }, scenario);
+        StartWith(t, new[] { P("in_region", selector: Sel("apple", "owner", "sensei"), region: "left") }, scenario);
         t.Engine.PlayerMove(apples[0], SceneRegions.Left, null);
         Assert.Equal(TaskStatuses.Active, Status(t));
         t.Engine.PlayerMove(apples[1], SceneRegions.Left, null);

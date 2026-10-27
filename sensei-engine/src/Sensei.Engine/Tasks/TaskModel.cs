@@ -42,11 +42,10 @@ public sealed class SelectorProperty
     public SelectorProperty Clone() => (SelectorProperty)MemberwiseClone();
 }
 
-/// <summary>Matches scene objects by catalog id, optional variant and optional scenario property.</summary>
+/// <summary>Matches scene objects by catalog id and optional scenario property (S119: no variants).</summary>
 public sealed class PredicateSelector
 {
     public string CatalogId { get; set; } = "";
-    public string? Variant { get; set; }
     public SelectorProperty? Property { get; set; }
 
     public PredicateSelector Clone()

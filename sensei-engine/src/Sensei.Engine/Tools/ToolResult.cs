@@ -47,7 +47,6 @@ public static class ToolErrorCodes
     public const string UnknownTool = "unknown_tool";
     public const string UnknownObject = "unknown_object";
     public const string UnknownCatalogId = "unknown_catalog_id";
-    public const string UnsupportedAsset = "unsupported_asset";
     public const string CapacityExceeded = "capacity_exceeded";
     public const string InvalidDestination = "invalid_destination";
     public const string StaleScene = "stale_scene";
@@ -75,10 +74,10 @@ public static class ToolErrorCodes
     /// <summary>Trace-only code for an unexpected exception inside a tool body (the exception is rethrown).</summary>
     public const string InternalError = "internal_error";
 
-    /// <summary>All 22 failure codes of SPEC §6, in SPEC order.</summary>
+    /// <summary>All 21 failure codes of SPEC §6, in SPEC order.</summary>
     public static IReadOnlyList<string> All { get; } = new[]
     {
-        InvalidArguments, UnknownTool, UnknownObject, UnknownCatalogId, UnsupportedAsset, CapacityExceeded,
+        InvalidArguments, UnknownTool, UnknownObject, UnknownCatalogId, CapacityExceeded,
         InvalidDestination, StaleScene, ImpossibleTask, TaskAlreadyActive, NoActiveTask, ObjectInActiveTask,
         PreferencePinned, SpeechLimitExceeded, ExcerptNotInTranscript, UnknownEvent, TurnBudgetExhausted,
         NothingToReplay, NoteLimitExceeded, LooksLikeCredential, SpeechFailed, NoTurn,

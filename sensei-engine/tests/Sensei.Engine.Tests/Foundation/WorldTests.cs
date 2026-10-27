@@ -342,7 +342,7 @@ public sealed class WorldTests
         var cup = Spawn(t, "cup", SceneRegions.Left);
         var s = t.Engine.GetScene();
         var inst = s.Instances.Single();
-        Assert.Equal((cup, "cup", "blue", "left", 1), (inst.Id, inst.CatalogId, inst.Variant, inst.Region, inst.Slot));
+        Assert.Equal((cup, "cup", "left", 1), (inst.Id, inst.CatalogId, inst.Region, inst.Slot));
         Assert.Null(inst.ContainerId);
         Assert.Equal(("コップ", "コップ", "cup"), (inst.Japanese, inst.Reading, inst.English));
         Assert.True(s.Support.ShowRomaji);

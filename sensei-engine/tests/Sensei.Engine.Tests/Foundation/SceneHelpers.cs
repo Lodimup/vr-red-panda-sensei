@@ -11,7 +11,7 @@ internal static class SceneHelpers
         List<string> ids;
         lock (t.Core.Sync)
         {
-            var requests = items.Select(i => new SpawnRequest(i.CatalogId, Catalog.ObjectCatalog.Get(i.CatalogId).DefaultVariant, i.Region)).ToList();
+            var requests = items.Select(i => new SpawnRequest(i.CatalogId, i.Region)).ToList();
             ids = t.Core.World.CommitSpawn(requests, SceneActors.Sensei, t.Core.CurrentTurnId).InstanceIds.ToList();
         }
         t.Core.FlushNotifications();

@@ -55,10 +55,9 @@ public sealed class UpdateChallengeTool : SenseiTool<UpdateChallengeArgs>
                   "object_id": { "type": "string", "description": "Instance id the predicate is about." },
                   "selector": {
                     "type": "object",
-                    "description": "Matches objects by catalog id, optional variant and optional scenario property.",
+                    "description": "Matches objects by catalog id and an optional scenario property.",
                     "properties": {
                       "catalog_id": { "type": "string", "description": "Catalog id to match." },
-                      "variant": { "type": "string", "description": "Variant to match." },
                       "property": {
                         "type": "object",
                         "description": "A scenario property declared by this task.",

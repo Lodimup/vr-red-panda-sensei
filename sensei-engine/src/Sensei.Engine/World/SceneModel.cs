@@ -10,7 +10,6 @@ public sealed class ObjectInstance
 {
     public string Id { get; set; } = "";
     public string CatalogId { get; set; } = "";
-    public string Variant { get; set; } = "";
     public string Region { get; set; } = "";
     public int Slot { get; set; }
 
@@ -53,7 +52,6 @@ public sealed class SnapshotInstance
 {
     public string Id { get; set; } = "";
     public string CatalogId { get; set; } = "";
-    public string Variant { get; set; } = "";
     public string Region { get; set; } = "";
     public int Slot { get; set; }
 

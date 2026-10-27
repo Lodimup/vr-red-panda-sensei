@@ -8,7 +8,7 @@ using Sensei.Engine.Tools;
 namespace Sensei.Engine.World;
 
 /// <summary>One object to create in <see cref="SceneWorld.CommitSpawn"/>.</summary>
-public sealed record SpawnRequest(string CatalogId, string Variant, string Region);
+public sealed record SpawnRequest(string CatalogId, string Region);
 
 /// <summary>
 /// The authoritative practice scene (SPEC §5): instances, slots, revision, selection and the event log.
@@ -119,7 +119,6 @@ public sealed class SceneWorld
             {
                 Id = r.CatalogId + "_" + n.ToString(CultureInfo.InvariantCulture),
                 CatalogId = r.CatalogId,
-                Variant = r.Variant,
                 Region = r.Region,
                 Slot = SceneRegions.IsPracticeArea(r.Region) ? NextSlot(r.Region) : 0,
             };
@@ -223,7 +222,6 @@ public sealed class SceneWorld
         {
             Id = i.Id,
             CatalogId = i.CatalogId,
-            Variant = i.Variant,
             Region = i.Region,
             Slot = i.Slot,
             ContainerId = i.ContainerId,

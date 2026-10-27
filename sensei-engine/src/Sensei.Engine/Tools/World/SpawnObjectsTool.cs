@@ -10,7 +10,6 @@ namespace Sensei.Engine.Tools.World;
 public sealed class SpawnObjectEntry
 {
     public string CatalogId { get; set; } = "";
-    public string? Variant { get; set; }
     public string? Region { get; set; }
     public int? Quantity { get; set; }
 }
@@ -43,7 +42,6 @@ public sealed class SpawnObjectsTool : SenseiTool<SpawnObjectsArgs>
                 "type": "object",
                 "properties": {
                   "catalog_id": { "type": "string", "description": "Catalog id of the object, for example cup or apple." },
-                  "variant": { "type": "string", "description": "Catalog variant; defaults to the entry's first variant." },
                   "region": { "type": "string", "enum": ["left", "center", "right", "sensei_side"], "description": "Where to place it; defaults to center." },
                   "quantity": { "type": "integer", "minimum": 1, "maximum": 4, "description": "How many to create, 1 to 4; defaults to 1." }
                 },

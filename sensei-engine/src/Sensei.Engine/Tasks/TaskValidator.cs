@@ -116,14 +116,13 @@ public static class TaskValidator
             if (p.ObjectId is not null && p.ObjectId == p.ReferenceId) return $"predicates[{i}]: object_id and reference_id are the same object";
         }
 
-        // S35b: selectors name catalog ids, variants and declared properties.
+        // S35b: selectors name catalog ids and declared properties.
         for (var i = 0; i < predicates.Count; i++)
         {
             var s = predicates[i].Selector;
             if (s is null) continue;
             var path = $"predicates[{i}].selector";
-            if (!ObjectCatalog.TryGet(s.CatalogId, out var entry)) return $"{path}.catalog_id: '{s.CatalogId}' is not in the catalog";
-            if (s.Variant is not null && !entry.HasVariant(s.Variant)) return $"{path}.variant: '{s.Variant}' is not a variant of {s.CatalogId}";
+            if (!ObjectCatalog.Contains(s.CatalogId)) return $"{path}.catalog_id: '{s.CatalogId}' is not in the catalog";
             if (s.Property is not null && !scenarioProperties.Any(sp => sp.Name == s.Property.Name && sp.Value == s.Property.Value))
                 return $"{path}.property: '{s.Property.Name}={s.Property.Value}' is not declared in scenario_properties";
         }
