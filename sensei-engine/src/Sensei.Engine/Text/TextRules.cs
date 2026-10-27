@@ -85,6 +85,50 @@ public static class TextRules
         (cp >= 0x20000 && cp <= 0x323AF) || // CJK extensions B..H
         cp == 0x3005 || cp == 0x3006 || cp == 0x3007; // 々 〆 〇
 
+    /// <summary>False when <paramref name="text"/> contains an unpaired surrogate.</summary>
+    public static bool IsWellFormedUtf16(string? text)
+    {
+        if (text is null) return true;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (char.IsHighSurrogate(text[i]))
+            {
+                if (i + 1 >= text.Length || !char.IsLowSurrogate(text[i + 1])) return false;
+                i++;
+            }
+            else if (char.IsLowSurrogate(text[i]))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>Replaces every unpaired surrogate with U+FFFD so the text can be written as JSON.</summary>
+    public static string ReplaceLoneSurrogates(string text)
+    {
+        if (IsWellFormedUtf16(text)) return text;
+        var sb = new StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                sb.Append(c).Append(text[i + 1]);
+                i++;
+            }
+            else if (char.IsSurrogate(c))
+            {
+                sb.Append('\uFFFD');
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
+    }
+
     /// <summary>Invariant ordinal-ignore-case containment.</summary>
     public static bool ContainsIgnoreCase(string? text, string value) =>
         text is not null && CultureInfo.InvariantCulture.CompareInfo.IndexOf(text, value, CompareOptions.OrdinalIgnoreCase) >= 0;

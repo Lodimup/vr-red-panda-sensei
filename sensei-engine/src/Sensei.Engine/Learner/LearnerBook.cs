@@ -40,15 +40,16 @@ public sealed class LearnerBook
     /// <summary>Stamps <c>updated_at</c>, snapshots under the lock and saves through the store.</summary>
     public async Task SaveAsync(CancellationToken ct)
     {
-        LearnerProfile copy;
-        lock (_sync)
-        {
-            Profile.UpdatedAt = _clock.GetUtcNow();
-            copy = Clone(Profile);
-        }
         await _saveGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // Snapshot inside the save gate so writes reach the store in commit order.
+            LearnerProfile copy;
+            lock (_sync)
+            {
+                Profile.UpdatedAt = _clock.GetUtcNow();
+                copy = Clone(Profile);
+            }
             await _store.SaveAsync(copy, ct).ConfigureAwait(false);
         }
         finally

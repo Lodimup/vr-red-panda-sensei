@@ -25,6 +25,7 @@ public sealed class SenseiEngine : IAsyncDisposable
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly object _turnGate = new();
     private Task? _runningTurn;
+    private long _turnTicket;
     private bool _previousTurnInterrupted;
     private bool _disposed;
 
@@ -52,6 +53,9 @@ public sealed class SenseiEngine : IAsyncDisposable
         var sessionId = NewSessionId(now);
         var profile = await options.ProfileStore.LoadAsync(options.ProfileId, ct).ConfigureAwait(false)
                       ?? LearnerProfile.CreateDefault(options.ProfileId, now);
+        var problem = profile.ProfileId != options.ProfileId ? "profile_id" : profile.FindShapeProblem();
+        if (problem is not null)
+            throw new ProfileCorruptException(options.ProfileId, options.ProfileId + ".json", new FormatException("invalid field: " + problem));
         profile.Sessions.Add(new SessionRecord { SessionId = sessionId, StartedAt = now });
 
         var core = new EngineCore(options, clock, sessionId, new Secrets(options.KnownSecrets), profile, extraTools);
@@ -126,6 +130,7 @@ public sealed class SenseiEngine : IAsyncDisposable
     /// <summary>S18, S105: selects an object (no revision change) and evaluates the active task.</summary>
     public PlayerActionResult PlayerSelect(string instanceId)
     {
+        using var scope = _core.OpenNotificationScope();
         PlayerActionResult result;
         lock (_core.Sync)
         {
@@ -146,6 +151,7 @@ public sealed class SenseiEngine : IAsyncDisposable
     /// <summary>S19, S115: moves an object as the player under the same destination rules as <c>move_object</c>.</summary>
     public PlayerActionResult PlayerMove(string instanceId, string? region, string? containerId)
     {
+        using var scope = _core.OpenNotificationScope();
         PlayerActionResult result;
         lock (_core.Sync)
         {
@@ -170,13 +176,20 @@ public sealed class SenseiEngine : IAsyncDisposable
         if (patch is null) throw new ArgumentNullException(nameof(patch));
         var invalid = patch.Validate();
         if (invalid is not null) throw new ArgumentException(invalid, nameof(patch));
+        using var scope = _core.OpenNotificationScope();
         lock (_core.Sync)
         {
             SupportRules.ApplyPlayerPatch(_core.Learner.Profile, _core.Learner.CurrentSession(_core.SessionId), patch);
             _core.QueueSupportChanged();
         }
-        await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
-        _core.FlushNotifications();
+        try
+        {
+            await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _core.FlushNotifications();
+        }
     }
 
     /// <summary>S42: like <c>set_support</c> with <c>starting_band</c> and reason <c>learner_request</c>, as the player.</summary>
@@ -184,13 +197,20 @@ public sealed class SenseiEngine : IAsyncDisposable
     {
         if (!StartingBands.IsBand(band))
             throw new ArgumentException($"starting band must be one of {string.Join(", ", StartingBands.All)}", nameof(band));
+        using var scope = _core.OpenNotificationScope();
         lock (_core.Sync)
         {
             SupportRules.ApplyStartingBand(_core.Learner.Profile, _core.Learner.CurrentSession(_core.SessionId), band, PreferenceActors.Player, _core.Clock.GetUtcNow());
             _core.QueueSupportChanged();
         }
-        await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
-        _core.FlushNotifications();
+        try
+        {
+            await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _core.FlushNotifications();
+        }
     }
 
     /// <summary>Read-only summary of this session (S55 shape); ends nothing.</summary>
@@ -205,6 +225,8 @@ public sealed class SenseiEngine : IAsyncDisposable
     /// </summary>
     public async Task ResetProfileAsync(CancellationToken ct = default)
     {
+        using var scope = _core.OpenNotificationScope();
+        lock (_turnGate) _turnTicket++; // queued turns are superseded by the reset
         await CancelRunningTurnAsync().ConfigureAwait(false);
         await _lifecycle.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -242,17 +264,39 @@ public sealed class SenseiEngine : IAsyncDisposable
 
     private async Task<TurnResult> RunGatedAsync(Func<Task<Prepared>> start, CancellationToken ct)
     {
+        using var scope = _core.OpenNotificationScope();
+        long ticket;
+        lock (_turnGate) ticket = ++_turnTicket;
         await CancelRunningTurnAsync().ConfigureAwait(false);
         await _lifecycle.WaitAsync(ct).ConfigureAwait(false);
         var settled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        lock (_turnGate) _runningTurn = settled.Task;
+        bool superseded;
+        lock (_turnGate)
+        {
+            superseded = ticket != _turnTicket;
+            if (!superseded) _runningTurn = settled.Task;
+        }
+        if (superseded)
+        {
+            // S68: a newer turn (or a reset) arrived while this one waited; it never starts.
+            _lifecycle.Release();
+            return new TurnResult { TurnId = _core.CurrentTurnId, GenerationId = _core.CurrentGeneration, Status = TurnStatuses.Cancelled };
+        }
         TurnResult result;
         try
         {
             var prepared = await start().ConfigureAwait(false);
+            bool supersededAfterStart;
+            lock (_turnGate) supersededAfterStart = ticket != _turnTicket;
             if (prepared.Immediate is not null)
             {
                 result = prepared.Immediate;
+            }
+            else if (supersededAfterStart)
+            {
+                // A newer request arrived between the gate and the turn start: its cancel may have hit the old generation.
+                _core.CancelGeneration();
+                result = new TurnResult { TurnId = prepared.Request!.Turn.TurnId, GenerationId = prepared.Request.Turn.GenerationId, Status = TurnStatuses.Cancelled };
             }
             else if (_core.Options.ChatClient is null)
             {

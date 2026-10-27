@@ -63,11 +63,45 @@ public sealed class ArgumentSchema
         {
             using var doc = JsonDocument.Parse(json!, new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow, MaxDepth = 32 });
             element = doc.RootElement.Clone();
+            if (!AllStringsDecode(element))
+            {
+                element = default;
+                return false;
+            }
             return true;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException || ex is ArgumentException || ex is InvalidOperationException)
         {
             element = default;
+            return false;
+        }
+    }
+
+    /// <summary>False when a string or property name holds invalid UTF-16 (for example an escaped lone surrogate).</summary>
+    private static bool AllStringsDecode(JsonElement element)
+    {
+        try
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var p in element.EnumerateObject())
+                    {
+                        if (!TextRules.IsWellFormedUtf16(p.Name) || !AllStringsDecode(p.Value)) return false;
+                    }
+                    return true;
+                case JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray())
+                        if (!AllStringsDecode(item)) return false;
+                    return true;
+                case JsonValueKind.String:
+                    return TextRules.IsWellFormedUtf16(element.GetString());
+                default:
+                    return true;
+            }
+        }
+        catch (InvalidOperationException)
+        {
             return false;
         }
     }

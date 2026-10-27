@@ -49,7 +49,7 @@ public sealed class FileProfileStore : IProfileStore
         try
         {
             var profile = JsonSerializer.Deserialize(bytes, SenseiJsonContext.Default.LearnerProfile);
-            if (profile is null || profile.ProfileId != profileId || profile.Version != LearnerProfile.CurrentVersion)
+            if (profile is null || profile.ProfileId != profileId || profile.FindShapeProblem() is not null)
                 throw new ProfileCorruptException(profileId, path, null);
             return profile;
         }

@@ -56,7 +56,7 @@ public class ProbeTool : SenseiTool<ProbeArgs>
         {
           "type": "object",
           "properties": {
-            "action": { "type": "string", "enum": ["ok", "fail_unknown", "fail_speech", "spawn", "slow", "end_generation", "throw", "hint", "secret"], "description": "What the probe does." },
+            "action": { "type": "string", "enum": ["ok", "fail_unknown", "fail_speech", "spawn", "slow", "spawn_slow", "end_generation", "throw", "hint", "secret"], "description": "What the probe does." },
             "text": { "type": "string", "maxLength": 10, "description": "Echoed text, at most 10 characters." },
             "count": { "type": "integer", "minimum": 1, "maximum": 5, "description": "A bounded integer." },
             "ids": { "type": "array", "maxItems": 4, "uniqueItems": true, "items": { "type": "string", "description": "Instance id." }, "description": "Referenced instance ids." },
@@ -104,6 +104,16 @@ public class ProbeTool : SenseiTool<ProbeArgs>
             case "slow":
                 await Task.Delay(args.DelayMs ?? 5000, ct);
                 return context.Locked(() => context.Success());
+            case "spawn_slow":
+            {
+                var spawned = context.Locked(() =>
+                {
+                    var e = context.World.CommitSpawn(new[] { new SpawnRequest("apple", "default", SceneRegions.Center) }, SceneActors.Sensei, context.TurnId);
+                    return context.Success(e.InstanceIds);
+                });
+                await Task.Delay(args.DelayMs ?? 300, ct);
+                return spawned;
+            }
             case "end_generation":
                 context.EndGenerationAfterCall();
                 return context.Success();

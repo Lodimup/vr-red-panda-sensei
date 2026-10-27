@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Sensei.Engine.Text;
 
 namespace Sensei.Engine.Trace;
 
@@ -71,7 +72,7 @@ public sealed class Secrets
     public string? Sanitize(string? text)
     {
         if (string.IsNullOrEmpty(text)) return text;
-        var result = text!;
+        var result = TextRules.ReplaceLoneSurrogates(text!);
         foreach (var s in _known)
             result = result.Replace(s, CredentialPattern.Redacted);
         return CredentialPattern.Redact(result);

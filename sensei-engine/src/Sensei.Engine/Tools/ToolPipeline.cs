@@ -26,6 +26,7 @@ internal sealed class ToolPipeline
 
     private readonly EngineCore _core;
     private readonly Dictionary<CacheKey, CacheEntry> _cache = new();
+    private readonly Dictionary<CacheKey, InFlightCall> _inFlight = new();
     private long _autoCounter;
 
     public ToolPipeline(EngineCore core)
@@ -39,14 +40,26 @@ internal sealed class ToolPipeline
     /// </summary>
     public async Task<ToolResult> InvokeAsync(string toolName, string? argumentsJson, string? callId, long? generationId, CancellationToken ct)
     {
+        using var scope = _core.OpenNotificationScope();
         var stopwatch = Stopwatch.StartNew();
         Call call;
         lock (_core.Sync)
         {
             call = Precheck(toolName ?? "", argumentsJson, callId, generationId, stopwatch);
         }
+
+        // S24: the same call id while the first call is still running waits for it and returns its result.
+        if (call.Pending is not null)
+        {
+            var first = await call.Pending.ConfigureAwait(false);
+            lock (_core.Sync) WriteTrace(call, first, stopwatch, duplicate: true);
+            WritePendingTraces(call);
+            return first;
+        }
+
         if (call.Done is not null)
         {
+            WritePendingTraces(call);
             _core.FlushNotifications();
             return call.Done;
         }
@@ -68,7 +81,13 @@ internal sealed class ToolPipeline
                 {
                     var failed = call.Context!.Failure(ToolErrorCodes.InternalError, ex.GetType().Name);
                     Finish(call, failed, stopwatch, cache: false, countFailure: false);
+                    if (call.InFlight is not null)
+                    {
+                        _inFlight.Remove(call.InFlight.Key);
+                        call.InFlight.Completion.TrySetException(ex);
+                    }
                 }
+                WritePendingTraces(call);
                 _core.FlushNotifications();
                 throw;
             }
@@ -82,9 +101,11 @@ internal sealed class ToolPipeline
                 _core.EndGeneration(call.GenerationId);
             result = Finish(call, result, stopwatch, cache: true, countFailure: true);
         }
+        WritePendingTraces(call);
         _core.FlushNotifications();
         return result;
     }
+
 
     /// <summary>S26: <c>stale_scene</c> (with a fresh snapshot) when a player <c>moved</c> event is newer than the round base. Under the lock.</summary>
     public ToolResult? CheckStale(TurnState turn)
@@ -102,7 +123,11 @@ internal sealed class ToolPipeline
     }
 
     /// <summary>S87: forget every cached result.</summary>
-    public void ClearCache() => _cache.Clear();
+    public void ClearCache()
+    {
+        _cache.Clear();
+        _inFlight.Clear();
+    }
 
     private Call Precheck(string toolName, string? argumentsJson, string? callId, long? generationId, Stopwatch stopwatch)
     {
@@ -144,6 +169,15 @@ internal sealed class ToolPipeline
             {
                 WriteTrace(call, cached.Result, stopwatch, duplicate: true);
                 call.Done = cached.Result;
+                return call;
+            }
+            reused = true;
+        }
+        else if (!reserved && _inFlight.TryGetValue(key, out var running))
+        {
+            if (running.Tool == toolName && running.CanonicalArguments == Canonical(argumentsJson))
+            {
+                call.Pending = running.Completion.Task;
                 return call;
             }
             reused = true;
@@ -198,6 +232,11 @@ internal sealed class ToolPipeline
         call.CacheThis = cacheThis;
         call.GenerationToken = _core.GenerationToken;
         call.Context = new ToolContext(_core, turn, call.CallId, toolName, generation, tool.IsMutating);
+        if (cacheThis)
+        {
+            call.InFlight = new InFlightCall(key, toolName, Canonical(argumentsJson), new TaskCompletionSource<ToolResult>(TaskCreationOptions.RunContinuationsAsynchronously));
+            _inFlight[key] = call.InFlight;
+        }
         return call;
     }
 
@@ -226,6 +265,11 @@ internal sealed class ToolPipeline
         var sanitized = Sanitize(result);
         if (cache && call.CacheThis && turn is not null)
             _cache[new CacheKey(turn.TurnId, call.GenerationId, call.CallId)] = new CacheEntry(call.ToolName, Canonical(call.ArgumentsJson), sanitized);
+        if (call.InFlight is not null && cache)
+        {
+            _inFlight.Remove(call.InFlight.Key);
+            call.InFlight.Completion.TrySetResult(sanitized);
+        }
         WriteTrace(call, sanitized, stopwatch, duplicate: false);
         return sanitized;
     }
@@ -251,7 +295,19 @@ internal sealed class ToolPipeline
             Result = result,
         };
         call.Turn?.TraceEntries.Add(entry);
-        _core.WriteTrace(entry);
+        call.PendingTraces.Add(entry);
+    }
+
+    /// <summary>Hands queued trace entries to the sink outside the engine lock.</summary>
+    private void WritePendingTraces(Call call)
+    {
+        List<TraceEntry> entries;
+        lock (_core.Sync)
+        {
+            entries = new List<TraceEntry>(call.PendingTraces);
+            call.PendingTraces.Clear();
+        }
+        foreach (var e in entries) _core.WriteTrace(e);
     }
 
     /// <summary>S77: a copy of <paramref name="result"/> with every string sanitized.</summary>
@@ -348,6 +404,8 @@ internal sealed class ToolPipeline
 
     private sealed record CacheEntry(string Tool, string CanonicalArguments, ToolResult Result);
 
+    private sealed record InFlightCall(CacheKey Key, string Tool, string CanonicalArguments, TaskCompletionSource<ToolResult> Completion);
+
     private sealed class Call
     {
         public string ToolName = "";
@@ -362,5 +420,8 @@ internal sealed class ToolPipeline
         public ToolContext? Context;
         public CancellationToken GenerationToken;
         public ToolResult? Done;
+        public Task<ToolResult>? Pending;
+        public InFlightCall? InFlight;
+        public List<TraceEntry> PendingTraces = new();
     }
 }

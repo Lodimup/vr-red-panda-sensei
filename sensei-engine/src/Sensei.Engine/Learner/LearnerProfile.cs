@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 using Sensei.Engine.Tasks;
 
@@ -38,6 +39,27 @@ public sealed class LearnerProfile
         WorkingLevel = WorkingLevels.PreN5,
         Support = new SupportSettings(),
     };
+
+    /// <summary>
+    /// Null when the profile has the shape S58 requires (every collection present, known enum values), else what is wrong.
+    /// A stored profile failing this is corrupt (S57).
+    /// </summary>
+    public string? FindShapeProblem()
+    {
+        if (Version != CurrentVersion) return "version";
+        if (string.IsNullOrEmpty(ProfileId)) return "profile_id";
+        if (StartingBand is not null && !StartingBands.IsBand(StartingBand)) return "starting_band";
+        if (SelfReportedJlpt is not null && !WorkingLevels.SelfReportable.Contains(SelfReportedJlpt)) return "self_reported_jlpt";
+        if (!WorkingLevels.IsLevel(WorkingLevel)) return "working_level";
+        if (LevelHistory is null || LevelHistory.Exists(h => h is null || !WorkingLevels.IsLevel(h.From) || !WorkingLevels.IsLevel(h.To))) return "level_history";
+        if (Support is null) return "support";
+        if (!SupportValues.Paces.Contains(Support.Pace) || !SupportValues.CorrectionStyles.Contains(Support.CorrectionStyle) || !SupportValues.LanguageModes.Contains(Support.LanguageMode)) return "support";
+        if (Pinned is null || Pinned.Exists(p => !SupportFields.All.Contains(p))) return "pinned";
+        if (Evidence is null || Evidence.Exists(e => e is null || e.Target is null || e.EventIds is null || e.Actors is null || e.Assistance is null)) return "evidence";
+        if (Notes is null) return "notes";
+        if (Sessions is null || Sessions.Exists(s => s is null || s.PreferenceChanges is null)) return "sessions";
+        return null;
+    }
 
     public bool IsPinned(string field) => Pinned.Contains(field);
 

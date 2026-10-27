@@ -18,7 +18,8 @@ namespace Sensei.Engine;
 /// </summary>
 internal sealed class EngineCore
 {
-    private readonly List<Action> _outbox = new();
+    private readonly List<Action> _unscoped = new();
+    private readonly AsyncLocal<NotificationScope?> _scope = new();
     private long _sequence;
     private long _generation;
     private long _turnCounter;
@@ -172,13 +173,19 @@ internal sealed class EngineCore
     }
 
     /// <summary>
-    /// S87: clears scene objects, task, assistance log, utterances, speech history and the idempotency cache.
-    /// Counters keep increasing. Call under the lock after cancelling the generation.
+    /// S87: clears the active task (raising <c>OnTaskChanged</c> with status <c>abandoned</c>), scene objects, assistance log,
+    /// utterances, speech history and the idempotency cache. Counters keep increasing. Call under the lock after cancelling the generation.
     /// </summary>
     public void ClearSessionState()
     {
-        World.ClearForReset(CurrentTurnId);
+        if (Tasks.Active is { } active)
+        {
+            active.Status = TaskStatuses.Abandoned;
+            active.ClosedTurnId = CurrentTurnId;
+            QueueTaskChanged(active);
+        }
         Tasks.Clear();
+        World.ClearForReset(CurrentTurnId);
         Assistance.Clear();
         Utterances.Clear();
         SpeechHistory.Clear();
@@ -197,34 +204,64 @@ internal sealed class EngineCore
     {
         var copy = e.Clone();
         var snapshot = World.Snapshot();
-        _outbox.Add(() => Events.SceneChanged(copy, snapshot));
+        Enqueue(() => Events.SceneChanged(copy, snapshot));
     }
 
     public void QueueTaskChanged(TaskView task)
     {
         var copy = task.Clone();
-        _outbox.Add(() => Events.TaskChanged(copy));
+        Enqueue(() => Events.TaskChanged(copy));
     }
 
     public void QueueSupportChanged()
     {
         var copy = Learner.Profile.Support.Clone();
-        _outbox.Add(() => Events.SupportChanged(copy));
+        Enqueue(() => Events.SupportChanged(copy));
     }
 
-    /// <summary>Raises queued notifications outside the lock, in commit order (S69).</summary>
+    /// <summary>
+    /// Opens a notification scope for one operation (a tool call, a player action, a turn): notifications its commits queue
+    /// are raised only by that operation's <see cref="FlushNotifications"/>, on its own thread (S69). Dispose to close.
+    /// </summary>
+    public NotificationScope OpenNotificationScope()
+    {
+        var scope = new NotificationScope(this, _scope.Value);
+        _scope.Value = scope;
+        return scope;
+    }
+
+    /// <summary>Raises the current operation's queued notifications outside the lock, in commit order (S69).</summary>
     public void FlushNotifications()
     {
         List<Action> pending;
         lock (Sync)
         {
-            if (_outbox.Count == 0) return;
-            pending = new List<Action>(_outbox);
-            _outbox.Clear();
+            var list = _scope.Value?.Items ?? _unscoped;
+            if (list.Count == 0) return;
+            pending = new List<Action>(list);
+            list.Clear();
         }
         foreach (var raise in pending) raise();
     }
 
+    private void Enqueue(Action raise) => (_scope.Value?.Items ?? _unscoped).Add(raise);
+
+    /// <summary>One operation's pending notifications.</summary>
+    internal sealed class NotificationScope : IDisposable
+    {
+        private readonly EngineCore _core;
+        private readonly NotificationScope? _previous;
+
+        public NotificationScope(EngineCore core, NotificationScope? previous)
+        {
+            _core = core;
+            _previous = previous;
+        }
+
+        public List<Action> Items { get; } = new();
+
+        public void Dispose() => _core._scope.Value = _previous;
+    }
     /// <summary>Writes a sanitized trace entry (S28, S77). Sink exceptions are swallowed: tracing never breaks a call.</summary>
     public void WriteTrace(TraceEntry entry)
     {
