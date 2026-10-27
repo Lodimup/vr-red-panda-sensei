@@ -12,7 +12,7 @@ The LLM is central to interpreting unscripted speech, resolving references, answ
 
 - Passthrough remains visible. Sensei uses pre-rendered sprite frames and learning objects use realistic high-resolution images shown as flat cardboard cutouts, all bundled with the app; text panels are rendered normally.
 
-- Object variants and Sensei animation frames are prepared before release. The LLM composes scenes from this catalog and never generates or redraws object art during play.
+- Object images (one per object) and Sensei animation frames are prepared before release. The LLM composes scenes from this catalog and never generates or redraws object art during play.
 
 - The complete experience works in an empty room or above an empty table, without physical props, an automatic room scan, or a modeled 3D environment.
 

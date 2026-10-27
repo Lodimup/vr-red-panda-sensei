@@ -4,7 +4,7 @@ The real environment provides the visual background. Place an adjustable virtual
 
 ### Prepared sprite assets
 
-Bundle transparent PNG sprites or sprite atlases with the application. Every launch object, approved color variant, and Sensei animation frame is prepared before the build. Runtime code can position, scale, highlight, or play the supplied frames; the model only selects catalog IDs and permitted actions. Object sprites are realistic, high-resolution images, not pixel art: every object and approved variant is a 1024×1024 RGBA PNG of the object alone, photographic studio quality, on a transparent background. In the scene each object is presented as a flat two-dimensional cardboard cutout (a die-cut standee): the bundled `<object>_card.png` adds a printed card border and a visible cardboard edge around the cutout, and is shown on a flat plane with linear filtering and mipmaps. RULING(Handler 2026-10-27): 32×32 pixel art was rejected; objects are realistic high-resolution images presented as 2D cardboard cutouts. Sensei animation frames are produced with the Sloth Studio sprite pipeline and shipped at that pipeline's full output resolution. Generate no new object images, meshes, or animation frames during a conversation.
+Bundle transparent PNG sprites or sprite atlases with the application. Every launch object and Sensei animation frame is prepared before the build. Each object has exactly one image (RULING(Handler 2026-10-28): one image per object, no colour variants). Runtime code can position, scale, highlight, or play the supplied frames; the model only selects catalog IDs and permitted actions. Object sprites are realistic, high-resolution images, not pixel art: every object is one 1024×1024 RGBA PNG of the object alone, photographic studio quality, on a transparent background. In the scene each object is presented as a flat two-dimensional cardboard cutout (a die-cut standee): the bundled `<object>_card.png` adds a printed card border and a visible cardboard edge around the cutout, and is shown on a flat plane with linear filtering and mipmaps. RULING(Handler 2026-10-27): 32×32 pixel art was rejected; objects are realistic high-resolution images presented as 2D cardboard cutouts. Sensei animation frames are produced with the Sloth Studio sprite pipeline and shipped at that pipeline's full output resolution. Generate no new object images, meshes, or animation frames during a conversation.
 
 A request for an unavailable item can produce a spoken explanation or a normal text vocabulary card. It must not create a pretend catalog entry, block the conversation while generating art, or claim that the requested interactive object exists. Additional object packs are pre-rendered and validated before they are added.
 
@@ -14,18 +14,18 @@ A request for an unavailable item can produce a spoken explanation or a normal t
 | --- | --- | --- |
 | Water | 水 / みず | A distinct water-bottle sprite; request, choose, compare. |
 | Tea | お茶 / おちゃ | A clearly different tea sprite; request, choose, compare. |
-| Cup | コップ | Two approved color variants; select and arrange. |
+| Cup | コップ | One cup image; select and arrange. |
 | Apple | りんご | Duplicate items for quantities and preferences. |
 | Banana | バナナ | Contrast with other food and practice quantities. |
 | Rice ball | おにぎり | Food preferences and simple role-play. |
-| Book | 本 / ほん | Approved color variants; arrange and compare. |
+| Book | 本 / ほん | One book image; arrange and compare. |
 | Pen | ペン | A small everyday object with a generous selection target. |
 | Bag | かばん | A logical container with a clearly visible item summary. |
 | Box | 箱 / はこ | A logical container and reference object. |
 | Key | 鍵 / かぎ | Request, move, and follow an ordered instruction. |
 | Umbrella | 傘 / かさ | Preferences and context-rich discussion. |
 
-The catalog owns each object's ID, Japanese display forms, reading, English meaning, approved variants, applicable counters, and allowed actions. Keep a maximum of 16 visible instances in the P0 scene. Use generic quantity language until a reviewed counter is explicitly targeted.
+The catalog owns each object's ID, Japanese display forms, reading, English meaning, applicable counters, and allowed actions. Keep a maximum of 16 visible instances in the P0 scene. Use generic quantity language until a reviewed counter is explicitly targeted.
 
 Containment is a game relation with visual feedback: an item can be placed into a bag or box, and its thumbnail remains inspectable. Left and right refer to the practice area's marked orientation, not an unstated speaker viewpoint. Store the task's reference frame and do not change it mid-instruction.
 
