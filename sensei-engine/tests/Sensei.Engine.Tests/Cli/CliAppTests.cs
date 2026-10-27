@@ -138,8 +138,8 @@ public sealed class CliAppTests
 
         Assert.Equal(0, run.Code);
         Assert.Contains("[tool] inspect_scene success rev=0", run.Lines);
-        var data = Assert.Single(run.Lines, l => l.StartsWith("data: ", StringComparison.Ordinal));
-        using var doc = JsonDocument.Parse(data["data: ".Length..]);
+        var data = Assert.Single(run.Lines, l => l.StartsWith("{", StringComparison.Ordinal));
+        using var doc = JsonDocument.Parse(data);
         Assert.Equal(0, doc.RootElement.GetProperty("revision").GetInt64());
     }
 
@@ -315,7 +315,8 @@ public sealed class CliAppTests
     {
         var run = await ScriptAsync(new[] { "/correct hello" }, new ScriptedChatClient().EnqueueText("x"));
         Assert.Contains(run.Lines, l => l.StartsWith("error: nothing_to_correct:", StringComparison.Ordinal));
-        Assert.Equal(1, run.Code);
+        // S110 lists what exits 1 and what exits 2; this is neither, so it exits 0.
+        Assert.Equal(0, run.Code);
     }
 
     // ---------------------------------------------------------------- S74 / S110 exit codes

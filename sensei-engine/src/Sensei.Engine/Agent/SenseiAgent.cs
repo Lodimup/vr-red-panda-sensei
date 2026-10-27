@@ -20,7 +20,7 @@ namespace Sensei.Engine.Agent;
 /// persistence → <see cref="RoundLimitingChatClient"/> → the provider client. The agent uses
 /// <c>UseProvidedChatClientAsIs</c> so the framework does not wrap the stack a second time.
 /// </remarks>
-internal sealed class SenseiAgentRunner : IAgentRunner
+internal sealed class SenseiAgent : IAgentRunner
 {
     private readonly EngineCore _core;
     private readonly ContextRenderer _renderer;
@@ -30,7 +30,7 @@ internal sealed class SenseiAgentRunner : IAgentRunner
     private TurnScope? _active;
     private long _eventMark;
 
-    public SenseiAgentRunner(EngineCore core)
+    public SenseiAgent(EngineCore core)
     {
         _core = core;
         _renderer = new ContextRenderer(core);
@@ -96,7 +96,7 @@ internal sealed class SenseiAgentRunner : IAgentRunner
         {
             _session ??= (ChatClientAgentSession)await _agent.CreateSessionAsync(linked.Token).ConfigureAwait(false);
             PrepareHistory(_session);
-            var learnerMessage = new ChatMessage(ChatRole.User, _renderer.RenderLearnerMessage(scope, includeNotes: false));
+            var learnerMessage = new ChatMessage(ChatRole.User, _renderer.RenderLearnerMessage(scope, includeCurrent: false));
             await _agent.RunAsync(learnerMessage, _session, null, linked.Token).ConfigureAwait(false);
             status = scope.BudgetExhausted ? TurnStatuses.BudgetExhausted : TurnStatuses.Completed;
             if (linked.IsCancellationRequested) status = TurnStatuses.Cancelled;
@@ -108,7 +108,7 @@ internal sealed class SenseiAgentRunner : IAgentRunner
         catch (Exception ex)
         {
             status = TurnStatuses.Failed;
-            (errorCode, errorDetail) = ProviderErrors.Map(ex);
+            (errorCode, errorDetail) = ProviderErrors.Map(ex, _core.Secrets);
         }
         finally
         {
@@ -161,13 +161,18 @@ internal sealed class SenseiAgentRunner : IAgentRunner
                 result.Spoken.Add(new SpokenUtterance
                 {
                     UtteranceId = entry.UtteranceId,
-                    Segments = entry.Segments.ToList(),
+                    // S77: the report the host receives goes through the same sanitizer as every other string that leaves the engine.
+                    Segments = entry.Segments.Select(s => new SpeechSegment(s.Lang, Clean(s.Text), CleanOrNull(s.Reading), CleanOrNull(s.Romaji), CleanOrNull(s.Translation))).ToList(),
                     Outcome = entry.Outcome,
                 });
             }
         }
         return result;
     }
+
+    private string Clean(string text) => _core.Secrets.Sanitize(text) ?? "";
+
+    private string? CleanOrNull(string? text) => _core.Secrets.Sanitize(text);
 
     private static TurnResult Failed(Tools.TurnState turn, string code, string detail) => new()
     {

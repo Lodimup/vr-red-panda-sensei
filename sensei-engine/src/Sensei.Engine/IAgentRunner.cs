@@ -5,7 +5,7 @@ using Sensei.Engine.Tools;
 namespace Sensei.Engine;
 
 /// <summary>
-/// Runs one model-driven turn after the engine started it (S23, S117). Implemented by <c>Agent/SenseiAgentRunner</c>.
+/// Runs one model-driven turn after the engine started it (S23, S117). Implemented by <c>Agent/SenseiAgent</c>.
 /// The engine owns the lifecycle gate (S68, S87), the utterance record, transcript correction (S99) and the final
 /// <c>idle</c> state; the runner owns rounds, history, provider errors and <c>thinking</c>/<c>speaking</c>.
 /// </summary>
