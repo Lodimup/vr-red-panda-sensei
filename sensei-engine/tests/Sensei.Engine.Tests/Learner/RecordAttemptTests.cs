@@ -580,17 +580,116 @@ public sealed class RecordAttemptTests
     }
 
     [Fact]
-    public async Task S120_an_abandoned_task_is_not_bound_by_default_and_is_refused_by_id()
+    public async Task S121_an_abandoned_task_is_never_bound_implicitly()
+    {
+        await using var t = await TestEngine.CreateAsync();
+        t.Engine.BeginTurn("りんごをください");
+        StartTask(t, "production", "ringo");
+        lock (t.Core.Sync) t.Core.Tasks.CommitAbandon(t.Core.CurrentTurnId);
+        var sameTurn = await Attempt(t, "production", "ringo", "りんご");
+        Assert.Equal("no_task", Str(sameTurn, "engine_outcome"));
+        Assert.False(DataOf(sameTurn).TryGetProperty("task_id", out _));
+        var next = await SayAndAttempt(t, "production", "mizu", "みずをください");
+        Assert.Equal("no_task", Str(next, "engine_outcome"));
+    }
+
+    [Fact]
+    public async Task S121_an_explicit_task_id_binds_a_task_abandoned_in_this_or_the_previous_turn_with_task_ended()
     {
         await using var t = await TestEngine.CreateAsync();
         t.Engine.BeginTurn("りんごをください");
         var (task, _) = StartTask(t, "production", "ringo");
         lock (t.Core.Sync) t.Core.Tasks.CommitAbandon(t.Core.CurrentTurnId);
-        var byDefault = await Attempt(t, "production", "ringo", "りんご");
-        Assert.Equal("no_task", Str(byDefault, "engine_outcome"));
+        var sameTurn = await Attempt(t, "production", "ringo", "りんご", taskId: task.TaskId);
+        Assert.True(sameTurn.IsSuccess, sameTurn.Detail);
+        Assert.Equal(task.TaskId, Str(sameTurn, "task_id"));
+        Assert.Equal("task_ended", Str(sameTurn, "engine_outcome"));
+
         t.Engine.BeginTurn("りんごをください");
-        var byId = await Attempt(t, "production", "ringo", "りんご", taskId: task.TaskId);
-        Assert.Equal(ToolErrorCodes.NoActiveTask, byId.ErrorCode);
+        var nextTurn = await Attempt(t, "production", "ringo", "りんご", taskId: task.TaskId);
+        Assert.Equal(task.TaskId, Str(nextTurn, "task_id"));
+        Assert.Equal("task_ended", Str(nextTurn, "engine_outcome"));
+    }
+
+    [Fact]
+    public async Task S121_an_explicit_task_id_abandoned_two_turns_ago_is_refused()
+    {
+        await using var t = await TestEngine.CreateAsync();
+        t.Engine.BeginTurn("りんごをください");
+        var (task, _) = StartTask(t, "production", "ringo");
+        lock (t.Core.Sync) t.Core.Tasks.CommitAbandon(t.Core.CurrentTurnId);
+        t.Engine.BeginTurn("one");
+        t.Engine.BeginTurn("りんごをください");
+        var r = await Attempt(t, "production", "ringo", "りんご", taskId: task.TaskId);
+        Assert.Equal(ToolErrorCodes.NoActiveTask, r.ErrorCode);
+    }
+
+    [Fact]
+    public async Task S121_implicit_binding_skips_a_more_recent_abandoned_task_for_the_latest_completed_one()
+    {
+        await using var t = await TestEngine.CreateAsync();
+        t.Engine.BeginTurn("りんごをください");
+        var (first, apple) = StartTask(t, "production", "ringo");
+        t.Engine.PlayerMove(apple, "left", null);
+        StartTask(t, "production", "ringo");
+        lock (t.Core.Sync) t.Core.Tasks.CommitAbandon(t.Core.CurrentTurnId);
+        var r = await Attempt(t, "production", "ringo", "りんご");
+        Assert.Equal(first.TaskId, Str(r, "task_id"));
+        Assert.Equal("task_completed", Str(r, "engine_outcome"));
+    }
+
+    [Fact]
+    public async Task S121_implicit_binding_prefers_the_active_task_over_a_finished_one()
+    {
+        await using var t = await TestEngine.CreateAsync();
+        t.Engine.BeginTurn("りんごをください");
+        var (_, apple) = StartTask(t, "production", "ringo");
+        t.Engine.PlayerMove(apple, "left", null);
+        var (second, _) = StartTask(t, "production", "ringo");
+        var r = await Attempt(t, "production", "ringo", "りんご");
+        Assert.Equal(second.TaskId, Str(r, "task_id"));
+        Assert.Equal("task_active", Str(r, "engine_outcome"));
+    }
+
+    [Fact]
+    public async Task S121_implicit_binding_picks_the_most_recent_of_a_completed_and_an_ended_task()
+    {
+        await using var t = await TestEngine.CreateAsync();
+        t.Engine.BeginTurn("りんごをください");
+        var (_, apple) = StartTask(t, "production", "ringo");
+        t.Engine.PlayerMove(apple, "left", null);
+        var (ended, _) = StartTask(t, "production", "ringo");
+        lock (t.Core.Sync) t.Core.Tasks.CommitEnd(t.Core.CurrentTurnId);
+        var r = await Attempt(t, "production", "ringo", "りんご");
+        Assert.Equal(ended.TaskId, Str(r, "task_id"));
+        Assert.Equal("task_ended", Str(r, "engine_outcome"));
+    }
+
+    [Fact]
+    public async Task S95_a_listening_attempt_citing_a_sensei_event_after_the_task_started_is_invalid_arguments()
+    {
+        await using var t = await TestEngine.CreateAsync();
+        t.Engine.BeginTurn("start");
+        var (_, apple) = StartTask(t, "listening", "ringo");
+        var moved = SenseiMove(t, apple, "right", null).EventId;
+        var r = await Attempt(t, "listening", "ringo", null, eventIds: new[] { moved });
+        Assert.Equal(ToolErrorCodes.InvalidArguments, r.ErrorCode);
+        Assert.Equal("listening_requires_player_events", r.Detail);
+    }
+
+    [Fact]
+    public async Task S95_a_listening_attempt_may_cite_several_player_events_and_the_first_one_sets_the_source_position()
+    {
+        await using var t = await TestEngine.CreateAsync();
+        t.Engine.BeginTurn("start");
+        var (_, apple) = StartTask(t, "listening", "ringo");
+        t.Engine.PlayerMove(apple, "right", null);
+        var first = MoveEventId(t);
+        t.Engine.PlayerMove(apple, "left", null);
+        var second = MoveEventId(t);
+        var r = await Attempt(t, "listening", "ringo", null, eventIds: new[] { second, first });
+        Assert.True(r.IsSuccess, r.Detail);
+        Assert.Equal(new[] { "player", "player" }, StrArray(DataOf(r).GetProperty("actors")));
     }
 
     // ---------------------------------------------------------------- S98 uncertainty

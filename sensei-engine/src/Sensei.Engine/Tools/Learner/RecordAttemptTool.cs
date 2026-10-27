@@ -122,8 +122,8 @@ public sealed class RecordAttemptTool : SenseiTool<RecordAttemptArgs>
                 return context.Failure(ToolErrorCodes.ExcerptNotInTranscript, "transcript_excerpt: not found in the learner's transcript of this or the previous turn");
         }
 
-        // S96: the bound task.
-        var task = context.Tasks.FindBindable(args.TaskId, context.TurnId, out var found);
+        // S96, S121: the bound task.
+        var task = BindTask(context, args.TaskId, out var found);
         if (!found)
             return context.Failure(ToolErrorCodes.NoActiveTask, $"task_id: '{args.TaskId}' is not active and did not finish in this or the previous turn");
 
@@ -199,6 +199,29 @@ public sealed class RecordAttemptTool : SenseiTool<RecordAttemptArgs>
         LevelRules.ApplyEvidenceLevelRules(profile, at);
         committed = true;
         return context.Success(null, Data(record, duplicate: false));
+    }
+
+    /// <summary>
+    /// S96, S121: an explicit <paramref name="taskId"/> binds when that task is active or was completed, ended or abandoned in the
+    /// current or previous turn (else <paramref name="found"/> is false → <c>no_active_task</c>). Without one the attempt binds to the
+    /// active task, else the most recent task completed or ended (never abandoned) in the current or previous turn, else no task.
+    /// </summary>
+    private static TaskView? BindTask(ToolContext context, string? taskId, out bool found)
+    {
+        found = true;
+        var turn = context.TurnId;
+
+        bool Recent(TaskView t) => t.ClosedTurnId is { } closed && (closed == turn || closed == turn - 1);
+
+        if (taskId is not null)
+        {
+            var named = context.Tasks.Find(taskId);
+            if (named is not null && (named.Status == TaskStatuses.Active || Recent(named))) return named;
+            found = false;
+            return null;
+        }
+        if (context.Tasks.Active is { } active) return active;
+        return context.Tasks.History.LastOrDefault(t => (t.Status == TaskStatuses.Completed || t.Status == TaskStatuses.Ended) && Recent(t));
     }
 
     private static string EngineOutcomeOf(TaskView? task) => task?.Status switch
