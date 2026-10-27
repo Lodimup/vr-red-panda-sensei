@@ -10,7 +10,7 @@ The LLM is central to interpreting unscripted speech, resolving references, answ
 
 - Meta Quest 3 is the primary acceptance device; Quest 3S is the secondary compatibility target.
 
-- Passthrough remains visible. Characters and learning objects use pre-rendered flat pixel sprites bundled with the app; text panels are rendered normally.
+- Passthrough remains visible. Sensei uses pre-rendered sprite frames and learning objects use realistic high-resolution images shown as flat cardboard cutouts, all bundled with the app; text panels are rendered normally.
 
 - Object variants and Sensei animation frames are prepared before release. The LLM composes scenes from this catalog and never generates or redraws object art during play.
 

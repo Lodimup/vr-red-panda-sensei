@@ -2,92 +2,102 @@
 # requires-python = ">=3.11"
 # dependencies = ["pillow>=10"]
 # ///
-"""Validate 32x32 sprites against PRD section 7.
+"""Validate object images against PRD section 7.
 
-Sprites live in assets/sprites/objects/ (catalog objects) and
-assets/sprites/ui/ (state icons and markers). Each is a 32x32 RGBA PNG with an
-allowed name, drawn only in the PICO-8 palette, with fully opaque or fully
-transparent pixels and a 1 px transparent margin, and has a 512x512 preview
-(16x nearest-neighbour) under <dir>/preview/ with the same name.
+RULING(Handler 2026-10-27): objects are realistic high-resolution images shown
+as flat 2D cardboard cutouts, not 32x32 pixel art.
+
+Each catalog object has two files in assets/sprites/objects/:
+  <name>.png       the object alone on a transparent background
+  <name>_card.png  the same cutout as a die-cut cardboard standee
+Both are 1024x1024 RGBA PNGs.
 """
 import sys
 from pathlib import Path
 
 from PIL import Image
 
-SPRITES = Path(__file__).resolve().parent.parent / "assets" / "sprites"
-PALETTE = {
-    (0x00, 0x00, 0x00), (0x1D, 0x2B, 0x53), (0x7E, 0x25, 0x53), (0x00, 0x87, 0x51),
-    (0xAB, 0x52, 0x36), (0x5F, 0x57, 0x4F), (0xC2, 0xC3, 0xC7), (0xFF, 0xF1, 0xE8),
-    (0xFF, 0x00, 0x4D), (0xFF, 0xA3, 0x00), (0xFF, 0xEC, 0x27), (0x00, 0xE4, 0x36),
-    (0x29, 0xAD, 0xFF), (0x83, 0x76, 0x9C), (0xFF, 0x77, 0xA8), (0xFF, 0xCC, 0xAA),
+ROOT = Path(__file__).resolve().parent.parent / "assets" / "sprites" / "objects"
+NAMES = {
+    "water", "tea", "cup_blue", "cup_red", "apple", "banana", "rice_ball",
+    "book_green", "book_yellow", "pen", "bag", "box", "key", "umbrella",
 }
-ALLOWED = {
-    "objects": {
-        "water", "tea", "cup_blue", "cup_red", "apple", "banana", "rice_ball",
-        "book_green", "book_yellow", "pen", "bag", "box", "key", "umbrella",
-    },
-    "ui": {
-        "ui_listening", "ui_mic_muted", "ui_thinking", "ui_speaking",
-        "ui_offline", "ui_highlight", "ui_arrow_left", "ui_arrow_right",
-    },
-}
+SIZE = (1024, 1024)
 
 
-def check(root: Path, allowed: set[str], path: Path) -> list[str]:
-    errors = []
-    name = path.stem
-    if name not in allowed:
-        return [f"{root.name}/{path.name}: unknown sprite name (allowed: {', '.join(sorted(allowed))})"]
+def load(path: Path, errors: list[str]) -> Image.Image | None:
     img = Image.open(path)
     if img.mode != "RGBA":
         errors.append(f"{path.name}: mode {img.mode}, expected RGBA")
         img = img.convert("RGBA")
-    if img.size != (32, 32):
-        return errors + [f"{path.name}: size {img.size}, expected (32, 32)"]
-    opaque = []
-    for y in range(32):
-        for x in range(32):
-            r, g, b, a = img.getpixel((x, y))
-            if a not in (0, 255):
-                errors.append(f"{path.name}: pixel ({x},{y}) alpha {a}, expected 0 or 255")
-            elif a == 255:
-                opaque.append((x, y))
-                if (r, g, b) not in PALETTE:
-                    errors.append(f"{path.name}: pixel ({x},{y}) colour #{r:02X}{g:02X}{b:02X} not in PICO-8 palette")
-    if not opaque:
-        return errors + [f"{path.name}: no opaque pixels"]
-    xs = [p[0] for p in opaque]
-    ys = [p[1] for p in opaque]
-    if min(xs) < 1 or min(ys) < 1 or max(xs) > 30 or max(ys) > 30:
-        errors.append(f"{path.name}: opaque pixels must stay inside x,y 1..30 (1 px transparent margin)")
-    if max(max(xs) - min(xs), max(ys) - min(ys)) + 1 < 20:
-        errors.append(f"{path.name}: object spans less than 20 px; draw it larger")
-    preview = root / "preview" / path.name
-    if not preview.exists():
-        errors.append(f"{path.name}: missing preview/{path.name}")
-    else:
-        p = Image.open(preview).convert("RGBA")
-        if p.size != (512, 512):
-            errors.append(f"preview/{path.name}: size {p.size}, expected (512, 512)")
-        elif p.resize((32, 32), Image.NEAREST).tobytes() != img.convert("RGBA").tobytes():
-            errors.append(f"preview/{path.name}: is not a 16x nearest-neighbour upscale of the sprite")
+    if img.size != SIZE:
+        errors.append(f"{path.name}: size {img.size}, expected {SIZE}")
+        return None
+    return img
+
+
+def margin_clear(img: Image.Image, margin: int) -> bool:
+    a = img.getchannel("A")
+    w, h = img.size
+    for box in ((0, 0, w, margin), (0, h - margin, w, h), (0, 0, margin, h), (w - margin, 0, w, h)):
+        if a.crop(box).getextrema()[1] != 0:
+            return False
+    return True
+
+
+def check(name: str) -> list[str]:
+    errors: list[str] = []
+    cut_path, card_path = ROOT / f"{name}.png", ROOT / f"{name}_card.png"
+    if not cut_path.exists():
+        return [f"{name}.png: missing"]
+    if not card_path.exists():
+        errors.append(f"{name}_card.png: missing")
+    cut = load(cut_path, errors)
+    if cut is None:
+        return errors
+    if not margin_clear(cut, 48):
+        errors.append(f"{name}.png: pixels within 48 px of the edge must be fully transparent")
+    solid = cut.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
+    bbox = solid.getbbox()
+    if bbox is None:
+        return errors + [f"{name}.png: no opaque pixels"]
+    span = max(bbox[2] - bbox[0], bbox[3] - bbox[1])
+    if span < 700:
+        errors.append(f"{name}.png: object spans {span} px; must span at least 700 px")
+    colours = len(set(cut.convert("RGB").crop(bbox).resize((256, 256)).getdata()))
+    if colours < 2000:
+        errors.append(f"{name}.png: only {colours} distinct colours in a 256x256 sample; expected a realistic image (>= 2000)")
+    if card_path.exists():
+        card = load(card_path, errors)
+        if card is not None:
+            if not margin_clear(card, 16):
+                errors.append(f"{name}_card.png: pixels within 16 px of the edge must be fully transparent")
+            card_solid = card.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
+            cut_px = solid.histogram()[255]
+            card_px = card_solid.histogram()[255]
+            missing = Image.composite(Image.new("L", SIZE, 255), Image.new("L", SIZE, 0), solid)
+            missing = Image.composite(Image.new("L", SIZE, 0), missing, card_solid).histogram()[255]
+            if missing > cut_px // 200:
+                errors.append(f"{name}_card.png: does not cover the cutout ({missing} cutout pixels are transparent on the card)")
+            if card_px - cut_px < 10000:
+                errors.append(f"{name}_card.png: card border too thin ({card_px - cut_px} border pixels, need >= 10000)")
     return errors
 
 
 def main() -> int:
-    sprites, errors = [], []
-    for folder, allowed in ALLOWED.items():
-        root = SPRITES / folder
-        found = sorted(root.glob("*.png"))
-        sprites += found
-        errors += [e for s in found for e in check(root, allowed, s)]
-        for p in sorted((root / "preview").glob("*.png")) if (root / "preview").exists() else []:
-            if not (root / p.name).exists():
-                errors.append(f"{folder}/preview/{p.name}: preview without a sprite")
+    errors: list[str] = []
+    present = set()
+    for p in sorted(ROOT.glob("*.png")):
+        stem = p.stem[:-5] if p.stem.endswith("_card") else p.stem
+        if stem not in NAMES:
+            errors.append(f"{p.name}: unknown name (allowed: {', '.join(sorted(NAMES))}, each with an optional _card)")
+        else:
+            present.add(stem)
+    for name in sorted(present):
+        errors += check(name)
     for e in errors:
         print(f"ERROR {e}")
-    print(f"checked {len(sprites)} sprites, {len(errors)} errors")
+    print(f"checked {len(present)} objects, {len(errors)} errors")
     return 1 if errors else 0
 
 

@@ -4,7 +4,7 @@ The real environment provides the visual background. Place an adjustable virtual
 
 ### Prepared sprite assets
 
-Bundle transparent PNG sprites or sprite atlases with the application. Every launch object, approved color variant, and Sensei animation frame is prepared before the build. Runtime code can position, scale, highlight, or play the supplied frames; the model only selects catalog IDs and permitted actions. Every object sprite and approved variant is authored at exactly 32×32 pixels on a transparent background; scale it up in world space with point filtering so pixel edges stay crisp, and never resample the source. Sensei animation frames are produced with the Sloth Studio sprite pipeline and shipped at that pipeline's full output resolution; they are not downscaled to the 32×32 object scale. Generate no new object images, meshes, or animation frames during a conversation.
+Bundle transparent PNG sprites or sprite atlases with the application. Every launch object, approved color variant, and Sensei animation frame is prepared before the build. Runtime code can position, scale, highlight, or play the supplied frames; the model only selects catalog IDs and permitted actions. Object sprites are realistic, high-resolution images, not pixel art: every object and approved variant is a 1024×1024 RGBA PNG of the object alone, photographic studio quality, on a transparent background. In the scene each object is presented as a flat two-dimensional cardboard cutout (a die-cut standee): the bundled `<object>_card.png` adds a printed card border and a visible cardboard edge around the cutout, and is shown on a flat plane with linear filtering and mipmaps. RULING(Handler 2026-10-27): 32×32 pixel art was rejected; objects are realistic high-resolution images presented as 2D cardboard cutouts. Sensei animation frames are produced with the Sloth Studio sprite pipeline and shipped at that pipeline's full output resolution. Generate no new object images, meshes, or animation frames during a conversation.
 
 A request for an unavailable item can produce a spoken explanation or a normal text vocabulary card. It must not create a pretend catalog entry, block the conversation while generating art, or claim that the requested interactive object exists. Additional object packs are pre-rendered and validated before they are added.
 
@@ -41,7 +41,7 @@ Containment is a game relation with visual feedback: an item can be placed into 
 
 - Speech panels have a solid or sufficiently opaque backing, scalable type, clear Japanese glyphs, and separate controls for Japanese text, readings, romaji, and meaning.
 
-- Use readable Japanese fonts for text even though objects use pixel art. Color is accompanied by text or another cue where it determines a task.
+- Use readable Japanese fonts for text next to the object images. Color is accompanied by text or another cue where it determines a task.
 
 - Keep listening, processing, speaking, and connection states visible. Add restrained haptics and satisfying object sounds without masking Sensei's speech.
 

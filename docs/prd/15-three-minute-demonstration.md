@@ -3,7 +3,7 @@
 | **Time** | **What the viewer sees** | **What it establishes** |
 | --- | --- | --- |
 | 0:00–0:20 | An empty room in passthrough; ghost red panda appears; the speaker says they know no Japanese. | The product starts at zero and needs no props. |
-| 0:20–0:55 | Sensei teaches a short request, answers a real question, and hands over the requested pixel object. | Two-way voice, grounded meaning, and a useful first interaction. |
+| 0:20–0:55 | Sensei teaches a short request, answers a real question, and hands over the requested cardboard object. | Two-way voice, grounded meaning, and a useful first interaction. |
 | 0:55–1:25 | A new arrangement appears with less help and the learner makes a fresh attempt. | Progressive practice and honest assistance tracking. |
 | 1:25–1:55 | The demonstrator makes an unscripted supported request involving a different object, quantity, or placement. | The LLM handles language and references while the world responds. |
 | 1:55–2:30 | An explicitly labeled advanced profile discusses a choice and asks a Japanese clarification or register question. | Advanced practice is available immediately; this is a separate ability demonstration. |

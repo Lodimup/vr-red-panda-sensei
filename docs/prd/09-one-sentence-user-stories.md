@@ -28,11 +28,11 @@ Every story below is one sentence with a user action and a benefit. Acceptance d
 | US15 | P0 | As a learner, I can correct what the system heard so that a transcription mistake does not become my learning failure. |
 | US16 | P0 | As a learner, I can recover from a connection problem so that my progress and current activity remain available. |
 
-### Learning with pixel objects
+### Learning with cardboard objects
 
 | **ID** | **Priority** | **One sentence story** |
 | --- | --- | --- |
-| US17 | P0 | As a beginner, I can hear a word while Sensei indicates its pixel object so that sound and meaning are connected. |
+| US17 | P0 | As a beginner, I can hear a word while Sensei indicates its cardboard object so that sound and meaning are connected. |
 | US18 | P0 | As a learner, I can point to an object and ask about it so that Sensei understands what I mean by this. |
 | US19 | P0 | As a learner, I can request an object in Japanese so that my speech produces a visible result. |
 | US20 | P0 | As a learner, I can express a valid request in different ways so that communication matters more than exact wording. |
