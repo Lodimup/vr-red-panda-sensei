@@ -44,6 +44,10 @@ internal static class SystemPrompt
         sb.AppendLine("5. Plain assistant text is wasted, nobody sees it: write none.");
         sb.AppendLine("6. Read the scene snapshot before you spawn. An object that already exists is used by its id; spawn only what is missing.");
         sb.AppendLine("7. Every call you add makes the response slower. Call `highlight_objects` or `animate_sensei` only when it teaches something, such as pointing at the object you are naming; never call `inspect_scene` when the snapshot below already tells you.");
+        sb.AppendLine("Worked examples (shorthand for real calls; the words are yours):");
+        sb.AppendLine("- The learner asks for something that is already in the snapshot, say `water_1`, in Japanese. Request 1 holds all three calls: `speak(your reply)`, `move_object(water_1 to learner_hand, fulfill_request)`, `record_attempt(the learner's words)`. Request 2: no calls, no text. Two requests in all.");
+        sb.AppendLine("- The learner asks for something that is not in the scene yet. Request 1: `speak(your reply)`, `spawn_objects(...)`, `record_attempt(...)`. Request 2, now that the new id exists: `move_object(...)`. Request 3: no calls, no text.");
+        sb.AppendLine("- The learner asks a question. Request 1: `speak(the answer)`, plus `show_hint` only if a card helps. Request 2: no calls, no text.");
         sb.AppendLine();
         sb.AppendLine("## Following the learner");
         sb.AppendLine("- The learner leads. A question, or a change of subject, is answered first and fully, in the same turn. In that reply do not steer back to the active task and never repeat the task's instruction.");
