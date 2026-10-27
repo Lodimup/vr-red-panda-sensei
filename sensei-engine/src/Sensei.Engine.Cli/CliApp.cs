@@ -46,7 +46,11 @@ internal sealed class CliApp
     public static async Task<int> RunAsync(string[] args, TextReader input, TextWriter output, IReadOnlyDictionary<string, string?> env,
         CancellationToken quit = default, IChatClient? chatClient = null)
     {
-        var writer = new CliOutput(output);
+        // S77: the configured key is known before anything is printed, so even an option error or a configuration error is cleaned.
+        var knownSecrets = new List<string>();
+        if (env.TryGetValue(LlmSettings.ApiKeyVariable, out var rawKey) && !string.IsNullOrWhiteSpace(rawKey)) knownSecrets.Add(rawKey.Trim());
+        var secrets = new Secrets(knownSecrets);
+        var writer = new CliOutput(output, secrets);
         var options = CliOptions.Parse(args, out var optionError);
         if (options is null)
         {
@@ -71,10 +75,6 @@ internal sealed class CliApp
         {
             configError = ex.Message;
         }
-        var knownSecrets = new List<string>();
-        if (settings is not null) knownSecrets.Add(settings.ApiKey);
-        else if (env.TryGetValue(LlmSettings.ApiKeyVariable, out var rawKey) && !string.IsNullOrWhiteSpace(rawKey)) knownSecrets.Add(rawKey.Trim());
-        var secrets = new Secrets(knownSecrets);
 
         var app = new CliApp(options, writer, secrets, configError);
         app._quit = CancellationTokenSource.CreateLinkedTokenSource(quit);
@@ -107,8 +107,10 @@ internal sealed class CliApp
                 KnownSecrets = knownSecrets,
             }).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is ArgumentException or ProfileCorruptException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Whatever the engine's boundary hands back for a start that failed (a storage error arrives as SenseiEngineException,
+            // S77) is a start-up error: it is reported on one line and the exit code is 1 (S110). Never an unhandled exception.
             _output.Line("error: " + Clean(ex.Message));
             return 1;
         }
@@ -340,7 +342,7 @@ internal sealed class CliApp
                 _output.Line("error: " + (_configError ?? LlmSettings.ApiKeyVariable + " is not set"));
                 break;
             case TurnErrorCodes.NothingToCorrect:
-                _usageError = true;
+                // S110 lists exactly what exits 1 and what exits 2; a correction with nothing to correct is neither, so it is reported and exits 0.
                 _output.Line($"error: {result.ErrorCode}: {Clean(result.ErrorDetail)}");
                 break;
             default:
@@ -428,7 +430,8 @@ internal sealed class CliApp
         var space = rest.IndexOfAny(new[] { ' ', '\t' });
         var name = space < 0 ? rest : rest[..space];
         var json = space < 0 ? "" : rest[(space + 1)..].Trim();
-        if (name.Length == 0)
+        // S71: the command is `/tool <name> <json>`; a call without its JSON is a malformed command (S110: exit 1), not a tool failure.
+        if (name.Length == 0 || json.Length == 0)
         {
             Fail("usage: /tool <name> <json>");
             return;
@@ -452,7 +455,7 @@ internal sealed class CliApp
         ToolResult result;
         try
         {
-            result = await _engine.InvokeToolAsync(name, json.Length == 0 ? "{}" : json).ConfigureAwait(false);
+            result = await _engine.InvokeToolAsync(name, json).ConfigureAwait(false);
         }
         finally
         {
@@ -460,7 +463,8 @@ internal sealed class CliApp
         }
 
         _output.Line(CliTraceSink.ToolLine(result.Tool, result.Status, result.ErrorCode, result.Revision));
-        if (result.Data is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined } data) _output.Line("data: " + data.GetRawText());
+        // S72: `data` is printed as one line of JSON, and nothing else is on that line.
+        if (result.Data is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined } data) _output.Line(data.GetRawText());
         if (result.Status != ToolStatuses.Success && !string.IsNullOrEmpty(result.Detail)) _output.Line("detail: " + Clean(result.Detail));
         if (result.Status == ToolStatuses.Cancelled) _manualTurnOpen = false;
     }

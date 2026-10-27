@@ -455,8 +455,9 @@ public sealed class SecretsTests
     [Fact]
     public void S77_shorter_secret_alone_does_not_hide_the_remaining_text()
     {
-        var secrets = new Secrets(new[] { "alpha", "alphabet" });
-        Assert.Equal("[redacted] and [redacted]", secrets.Sanitize("alpha and alphabet"));
+        // S126: both values are at least 8 characters, the shortest that is searched for.
+        var secrets = new Secrets(new[] { "alpha-key", "alpha-key-long" });
+        Assert.Equal("[redacted] and [redacted]", secrets.Sanitize("alpha-key and alpha-key-long"));
     }
 
     [Fact]

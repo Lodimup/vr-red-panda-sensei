@@ -96,7 +96,7 @@ internal sealed class SenseiAgentRunner : IAgentRunner
         {
             _session ??= (ChatClientAgentSession)await _agent.CreateSessionAsync(linked.Token).ConfigureAwait(false);
             PrepareHistory(_session);
-            var learnerMessage = new ChatMessage(ChatRole.User, _renderer.RenderLearnerMessage(scope, includeNotes: false));
+            var learnerMessage = new ChatMessage(ChatRole.User, _renderer.RenderLearnerMessage(scope, includeCurrent: false));
             await _agent.RunAsync(learnerMessage, _session, null, linked.Token).ConfigureAwait(false);
             status = scope.BudgetExhausted ? TurnStatuses.BudgetExhausted : TurnStatuses.Completed;
             if (linked.IsCancellationRequested) status = TurnStatuses.Cancelled;
@@ -108,7 +108,7 @@ internal sealed class SenseiAgentRunner : IAgentRunner
         catch (Exception ex)
         {
             status = TurnStatuses.Failed;
-            (errorCode, errorDetail) = ProviderErrors.Map(ex);
+            (errorCode, errorDetail) = ProviderErrors.Map(ex, _core.Secrets);
         }
         finally
         {

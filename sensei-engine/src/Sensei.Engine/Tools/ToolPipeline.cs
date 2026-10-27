@@ -362,12 +362,7 @@ internal sealed class ToolPipeline
         };
     }
 
-    private JsonElement SanitizeElement(JsonElement element)
-    {
-        var text = SanitizedJson(element);
-        using var doc = JsonDocument.Parse(text);
-        return doc.RootElement.Clone();
-    }
+    private JsonElement SanitizeElement(JsonElement element) => JsonRedaction.Sanitized(element, _core.Secrets);
 
     /// <summary>Sanitized arguments text: values and names cleaned when it parses (duplicates kept), else the raw text redacted.</summary>
     private string SanitizeJsonText(string json)
@@ -377,43 +372,7 @@ internal sealed class ToolPipeline
     }
 
     /// <summary>Compact JSON of <paramref name="element"/> with every string value and property name sanitized (S77).</summary>
-    private string SanitizedJson(JsonElement element)
-    {
-        using var stream = new System.IO.MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
-        {
-            WriteSanitized(element, writer);
-        }
-        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
-    }
-
-    private void WriteSanitized(JsonElement element, Utf8JsonWriter writer)
-    {
-        var s = _core.Secrets;
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                writer.WriteStartObject();
-                foreach (var p in element.EnumerateObject())
-                {
-                    writer.WritePropertyName(s.Sanitize(p.Name) ?? p.Name);
-                    WriteSanitized(p.Value, writer);
-                }
-                writer.WriteEndObject();
-                break;
-            case JsonValueKind.Array:
-                writer.WriteStartArray();
-                foreach (var item in element.EnumerateArray()) WriteSanitized(item, writer);
-                writer.WriteEndArray();
-                break;
-            case JsonValueKind.String:
-                writer.WriteStringValue(s.Sanitize(element.GetString()) ?? "");
-                break;
-            default:
-                element.WriteTo(writer);
-                break;
-        }
-    }
+    private string SanitizedJson(JsonElement element) => JsonRedaction.SanitizedText(element, _core.Secrets);
 
     private static JsonElement WithTaskStatus(JsonElement? data)
     {
