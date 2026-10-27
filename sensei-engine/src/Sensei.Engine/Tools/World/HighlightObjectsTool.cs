@@ -51,7 +51,7 @@ public sealed class HighlightObjectsTool : SenseiTool<HighlightObjectsArgs>
     public override Task<ToolResult> ExecuteAsync(HighlightObjectsArgs args, ToolContext context, CancellationToken ct)
     {
         var durationMs = args.DurationMs ?? DefaultDurationMs;
-        var result = context.Locked(() =>
+        return Task.FromResult(context.Locked(() =>
         {
             for (var i = 0; i < args.ObjectIds.Count; i++)
             {
@@ -67,11 +67,13 @@ public sealed class HighlightObjectsTool : SenseiTool<HighlightObjectsArgs>
                 recorded = AssistanceKinds.HighlightAnswer;
             }
 
+            // S22, S69: the event follows the settled call (queued, raised after the pipeline's final cancellation check), so a
+            // handler that cancels cannot turn this committed call into a cancelled one that left assistance behind.
+            var ids = args.ObjectIds.ToArray();
+            context.QueueAfterCommit(() => context.Events.Highlight(ids, durationMs));
+
             var data = new JsonObject { ["recorded_assistance"] = recorded };
             return context.Success(args.ObjectIds, ToolContext.ToData(data));
-        });
-
-        if (result.IsSuccess) context.Events.Highlight(args.ObjectIds.ToArray(), durationMs);
-        return Task.FromResult(result);
+        }));
     }
 }

@@ -17,6 +17,13 @@ namespace Sensei.Engine;
 /// <summary>
 /// The game-master engine (SPEC §3): authoritative scene, tasks, tools, learner model and the agent loop.
 /// All public members are thread-safe (S9).
+/// <para>
+/// S77: every public member is one exception boundary. A failure of a dependency (store, speech port, provider, tool body,
+/// cancellation callback) or of the engine reaches the host as a <see cref="SenseiEngineException"/>; the documented exceptions
+/// (<see cref="InvalidOperationException"/> for <c>turn_in_progress</c>, <see cref="ArgumentException"/>,
+/// <see cref="Storage.ProfileCorruptException"/>, <see cref="OperationCanceledException"/>) arrive as themselves. Either way the
+/// message is sanitized and there is no inner exception; the full sanitized failure goes to the trace.
+/// </para>
 /// </summary>
 public sealed class SenseiEngine : IAsyncDisposable
 {
@@ -43,17 +50,18 @@ public sealed class SenseiEngine : IAsyncDisposable
     internal static async Task<SenseiEngine> CreateAsync(SenseiEngineOptions options, IEnumerable<SenseiTool>? extraTools,
         Func<EngineCore, IAgentRunner>? runnerFactory, CancellationToken ct = default)
     {
-        if (options is null) throw new ArgumentNullException(nameof(options));
-        if (options.Speech is null) throw new ArgumentException("Speech is required", nameof(options));
-        if (options.ProfileStore is null) throw new ArgumentException("ProfileStore is required", nameof(options));
-        ProfileIds.Validate(options.ProfileId, nameof(options));
-
-        var clock = options.Clock ?? TimeProvider.System;
-        var now = clock.GetUtcNow();
-        var sessionId = NewSessionId(now);
-        var secrets = new Secrets(options.KnownSecrets);
+        var secrets = new Secrets(options?.KnownSecrets);
+        var sessionId = "";
         try
         {
+            if (options is null) throw new ArgumentNullException(nameof(options));
+            if (options.Speech is null) throw new ArgumentException("Speech is required", nameof(options));
+            if (options.ProfileStore is null) throw new ArgumentException("ProfileStore is required", nameof(options));
+            ProfileIds.Validate(options.ProfileId, nameof(options));
+
+            var clock = options.Clock ?? TimeProvider.System;
+            var now = clock.GetUtcNow();
+            sessionId = NewSessionId(now);
             var profile = await options.ProfileStore.LoadAsync(options.ProfileId, ct).ConfigureAwait(false)
                           ?? LearnerProfile.CreateDefault(options.ProfileId, now);
             var problem = profile.ProfileId != options.ProfileId ? "profile_id" : profile.FindShapeProblem();
@@ -65,9 +73,25 @@ public sealed class SenseiEngine : IAsyncDisposable
             await core.Learner.SaveAsync(ct).ConfigureAwait(false);
             return new SenseiEngine(core, runnerFactory);
         }
-        catch (Exception ex) when (ExceptionSanitizer.TryRewrite(ex, secrets, out var safe))
+        catch (Exception ex)
         {
-            throw safe; // S77
+            // S77: no engine exists yet to own the boundary, so it is applied here and traced straight to the host's sink.
+            var safe = ExceptionSanitizer.ForHost(ex, secrets, out var detail);
+            if (detail is not null) TraceCreateFailure(options, sessionId, detail);
+            throw safe;
+        }
+    }
+
+    private static void TraceCreateFailure(SenseiEngineOptions? options, string sessionId, string detail)
+    {
+        try
+        {
+            var at = (options?.Clock ?? TimeProvider.System).GetUtcNow();
+            options?.Trace?.Write(EngineCore.FailureEntry(at, sessionId, null, 0, nameof(CreateAsync), detail));
+        }
+        catch (Exception)
+        {
+            // A broken trace sink must not change what the host receives.
         }
     }
 
@@ -79,40 +103,40 @@ public sealed class SenseiEngine : IAsyncDisposable
     /// <summary>The 16 tool names in S10 order.</summary>
     public IReadOnlyList<string> ToolNames => _core.Tools.Names;
 
-    public SceneSnapshot GetScene()
+    public SceneSnapshot GetScene() => Guard(nameof(GetScene), () =>
     {
         lock (_core.Sync) return _core.World.Snapshot();
-    }
+    });
 
     /// <summary>Deep copy, safe to keep.</summary>
-    public LearnerProfileView GetProfile()
+    public LearnerProfileView GetProfile() => Guard(nameof(GetProfile), () =>
     {
         lock (_core.Sync) return LearnerBook.ToView(_core.Learner.Profile);
-    }
+    });
 
     /// <summary>The task whose status is <c>active</c>, or null (S96).</summary>
-    public TaskView? GetActiveTask()
+    public TaskView? GetActiveTask() => Guard(nameof(GetActiveTask), () =>
     {
         lock (_core.Sync) return _core.Tasks.Active?.Clone();
-    }
+    });
 
     // ---------------------------------------------------------------- conversation
 
     /// <summary>S23, S68, S117: cancels a running turn and waits for it, starts a turn (utterance recorded first) and runs the agent.</summary>
     public Task<TurnResult> RunTurnAsync(string transcript, CancellationToken ct = default) =>
-        RunGatedAsync(() => Task.FromResult(StartTurn(transcript ?? "", null)), ct);
+        GuardAsync(nameof(RunTurnAsync), () => RunGatedAsync(() => Task.FromResult(StartTurn(transcript ?? "", null)), ct));
 
     /// <summary>S48, S99, S116: supersedes the latest learner utterance and its attempts, then runs a normal turn with the correction.</summary>
     public Task<TurnResult> CorrectLastTranscriptAsync(string correctedTranscript, CancellationToken ct = default) =>
-        RunGatedAsync(() => StartCorrectionAsync(correctedTranscript ?? ""), ct);
+        GuardAsync(nameof(CorrectLastTranscriptAsync), () => RunGatedAsync(() => StartCorrectionAsync(correctedTranscript ?? ""), ct));
 
     /// <summary>S27: advances the generation; in-flight calls and speech of the old one end <c>cancelled</c>.</summary>
-    public void CancelGeneration() => _core.CancelGeneration();
+    public void CancelGeneration() => Guard(nameof(CancelGeneration), () => _core.CancelGeneration());
 
     // ---------------------------------------------------------------- manual turns
 
     /// <summary>S23: starts a manual turn. Throws <see cref="InvalidOperationException"/> (<c>turn_in_progress</c>) while a turn runs (S87).</summary>
-    public void BeginTurn(string transcript)
+    public void BeginTurn(string transcript) => Guard(nameof(BeginTurn), () =>
     {
         if (!_lifecycle.Wait(0)) throw new InvalidOperationException("turn_in_progress: a turn is running");
         try
@@ -124,19 +148,19 @@ public sealed class SenseiEngine : IAsyncDisposable
         {
             _lifecycle.Release();
         }
-    }
+    });
 
     /// <summary>S26: starts a new round within the current turn (round base = last scene event).</summary>
-    public void MarkRoundStart() => _core.MarkRoundStart();
+    public void MarkRoundStart() => Guard(nameof(MarkRoundStart), () => _core.MarkRoundStart());
 
     /// <summary>Invokes a tool as Sensei through the same pipeline the agent uses.</summary>
     public Task<ToolResult> InvokeToolAsync(string toolName, string argumentsJson, string? callId = null, CancellationToken ct = default) =>
-        _core.Pipeline.InvokeAsync(toolName, argumentsJson, callId, null, ct);
+        GuardAsync(nameof(InvokeToolAsync), () => _core.Pipeline.InvokeAsync(toolName, argumentsJson, callId, null, ct));
 
     // ---------------------------------------------------------------- player actions
 
     /// <summary>S18, S105: selects an object (no revision change) and evaluates the active task.</summary>
-    public PlayerActionResult PlayerSelect(string instanceId)
+    public PlayerActionResult PlayerSelect(string instanceId) => Guard(nameof(PlayerSelect), () =>
     {
         using var scope = _core.OpenNotificationScope();
         PlayerActionResult result;
@@ -154,10 +178,10 @@ public sealed class SenseiEngine : IAsyncDisposable
         }
         _core.FlushNotifications();
         return result;
-    }
+    });
 
     /// <summary>S19, S115: moves an object as the player under the same destination rules as <c>move_object</c>.</summary>
-    public PlayerActionResult PlayerMove(string instanceId, string? region, string? containerId)
+    public PlayerActionResult PlayerMove(string instanceId, string? region, string? containerId) => Guard(nameof(PlayerMove), () =>
     {
         using var scope = _core.OpenNotificationScope();
         PlayerActionResult result;
@@ -176,10 +200,10 @@ public sealed class SenseiEngine : IAsyncDisposable
         }
         _core.FlushNotifications();
         return result;
-    }
+    });
 
     /// <summary>S40, S76: sets the given support fields and pins them; saves. Invalid values → <see cref="ArgumentException"/>.</summary>
-    public async Task SetPreferenceByPlayerAsync(SupportPatch patch, CancellationToken ct = default)
+    public Task SetPreferenceByPlayerAsync(SupportPatch patch, CancellationToken ct = default) => GuardAsync(nameof(SetPreferenceByPlayerAsync), async () =>
     {
         if (patch is null) throw new ArgumentNullException(nameof(patch));
         var invalid = patch.Validate();
@@ -194,18 +218,14 @@ public sealed class SenseiEngine : IAsyncDisposable
         {
             await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (_core.TrySanitize(ex, out var safe))
-        {
-            throw safe; // S77
-        }
         finally
         {
             _core.FlushNotifications();
         }
-    }
+    });
 
     /// <summary>S42: like <c>set_support</c> with <c>starting_band</c> and reason <c>learner_request</c>, as the player.</summary>
-    public async Task SetStartingBandAsync(string band, CancellationToken ct = default)
+    public Task SetStartingBandAsync(string band, CancellationToken ct = default) => GuardAsync(nameof(SetStartingBandAsync), async () =>
     {
         if (!StartingBands.IsBand(band))
             throw new ArgumentException($"starting band must be one of {string.Join(", ", StartingBands.All)}", nameof(band));
@@ -219,27 +239,23 @@ public sealed class SenseiEngine : IAsyncDisposable
         {
             await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (_core.TrySanitize(ex, out var safe))
-        {
-            throw safe; // S77
-        }
         finally
         {
             _core.FlushNotifications();
         }
-    }
+    });
 
     /// <summary>Read-only summary of this session (S55 shape); ends nothing.</summary>
-    public SessionSummary GetSessionSummary()
+    public SessionSummary GetSessionSummary() => Guard(nameof(GetSessionSummary), () =>
     {
         lock (_core.Sync) return SessionSummaryFactory.Build(_core.Learner.Profile, _core.SessionId);
-    }
+    });
 
     /// <summary>
     /// S60, S87: cancels and awaits the running turn, deletes the stored profile and replaces it with a new default one,
     /// removes every scene object and clears task, assistance, utterances, speech history, cache and conversation.
     /// </summary>
-    public async Task ResetProfileAsync(CancellationToken ct = default)
+    public Task ResetProfileAsync(CancellationToken ct = default) => GuardAsync(nameof(ResetProfileAsync), async () =>
     {
         using var scope = _core.OpenNotificationScope();
         lock (_turnGate) _turnTicket++; // queued turns are superseded by the reset
@@ -262,25 +278,71 @@ public sealed class SenseiEngine : IAsyncDisposable
             _previousTurnInterrupted = false;
             await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (_core.TrySanitize(ex, out var safe))
-        {
-            throw safe; // S77
-        }
         finally
         {
             _lifecycle.Release();
         }
         _core.FlushNotifications();
-    }
+    });
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync() => new(GuardAsync(nameof(DisposeAsync), async () =>
     {
         if (_disposed) return;
         _disposed = true;
         await CancelRunningTurnAsync().ConfigureAwait(false);
-    }
+    }));
 
     // ---------------------------------------------------------------- internals
+
+    /// <summary>The exception boundary (S77) of a synchronous public member: whatever <paramref name="body"/> throws leaves as <see cref="Translate"/> says.</summary>
+    private void Guard(string operation, Action body)
+    {
+        try
+        {
+            body();
+        }
+        catch (Exception ex)
+        {
+            throw _core.Translate(operation, ex);
+        }
+    }
+
+    private T Guard<T>(string operation, Func<T> body)
+    {
+        try
+        {
+            return body();
+        }
+        catch (Exception ex)
+        {
+            throw _core.Translate(operation, ex);
+        }
+    }
+
+    /// <summary>The exception boundary (S77) of an asynchronous public member, covering the synchronous start and every await.</summary>
+    private async Task GuardAsync(string operation, Func<Task> body)
+    {
+        try
+        {
+            await body().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            throw _core.Translate(operation, ex);
+        }
+    }
+
+    private async Task<T> GuardAsync<T>(string operation, Func<Task<T>> body)
+    {
+        try
+        {
+            return await body().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            throw _core.Translate(operation, ex);
+        }
+    }
 
     private async Task<TurnResult> RunGatedAsync(Func<Task<Prepared>> start, CancellationToken ct)
     {
@@ -344,10 +406,6 @@ public sealed class SenseiEngine : IAsyncDisposable
                 _previousTurnInterrupted = result.Status == TurnStatuses.Cancelled;
             }
             result.ErrorDetail = _core.Secrets.Sanitize(result.ErrorDetail);
-        }
-        catch (Exception ex) when (_core.TrySanitize(ex, out var safe))
-        {
-            throw safe; // S77: a failing store, speech port or provider never hands the host a known secret
         }
         finally
         {
