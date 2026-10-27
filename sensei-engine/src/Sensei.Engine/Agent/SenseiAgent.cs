@@ -161,13 +161,18 @@ internal sealed class SenseiAgent : IAgentRunner
                 result.Spoken.Add(new SpokenUtterance
                 {
                     UtteranceId = entry.UtteranceId,
-                    Segments = entry.Segments.ToList(),
+                    // S77: the report the host receives goes through the same sanitizer as every other string that leaves the engine.
+                    Segments = entry.Segments.Select(s => new SpeechSegment(s.Lang, Clean(s.Text), CleanOrNull(s.Reading), CleanOrNull(s.Romaji), CleanOrNull(s.Translation))).ToList(),
                     Outcome = entry.Outcome,
                 });
             }
         }
         return result;
     }
+
+    private string Clean(string text) => _core.Secrets.Sanitize(text) ?? "";
+
+    private string? CleanOrNull(string? text) => _core.Secrets.Sanitize(text);
 
     private static TurnResult Failed(Tools.TurnState turn, string code, string detail) => new()
     {
