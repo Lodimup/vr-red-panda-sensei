@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Sensei.Engine/Sensei.Engine.csproj" />
+    <ProjectReference Include="../../src/Sensei.Engine.Cli/Sensei.Engine.Cli.csproj" />
   </ItemGroup>
 
 </Project>
