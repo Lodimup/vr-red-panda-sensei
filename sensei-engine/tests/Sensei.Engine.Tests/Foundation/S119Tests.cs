@@ -66,6 +66,9 @@ public sealed class S119Tests
         t.Engine.BeginTurn("y");
         var plain = await t.CallAsync("spawn_objects", """{"objects":[{"catalog_id":"cup"}]}""");
         Assert.True(plain.IsSuccess);
+        var cup = JsonCopy.ToElement(t.Engine.GetScene(), SenseiJsonContext.Default.SceneSnapshot).GetProperty("instances").EnumerateArray().Single(i => i.GetProperty("id").GetString() == "cup_1");
+        Assert.False(cup.TryGetProperty("variant", out _));
+        Assert.Null(typeof(SnapshotInstance).GetProperty("Variant"));
     }
 
     [Fact]
