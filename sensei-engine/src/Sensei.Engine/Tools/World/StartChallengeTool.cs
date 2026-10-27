@@ -130,5 +130,13 @@ public sealed class StartChallengeTool : SenseiTool<StartChallengeArgs>
     public override IEnumerable<string> ReferencedInstanceIds(StartChallengeArgs args) => TaskValidator.ReferencedIds(args.Predicates, args.ScenarioProperties);
 
     public override Task<ToolResult> ExecuteAsync(StartChallengeArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+        Task.FromResult(context.Locked(() =>
+        {
+            var failure = context.Tasks.ValidateStart(args.Predicates, args.ScenarioProperties);
+            if (failure is not null) return context.Failure(failure);
+
+            var task = context.Tasks.CommitStart(args.Family, args.Instruction!, args.SkillTargets, args.Predicates, args.ScenarioProperties,
+                args.Role, args.IsFreshVariation, context.TurnId);
+            return context.Success(null, ToolContext.ToData(task, SenseiJsonContext.Default.TaskView));
+        }));
 }

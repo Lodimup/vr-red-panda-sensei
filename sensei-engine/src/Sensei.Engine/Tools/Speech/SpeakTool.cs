@@ -1,8 +1,12 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
+using Sensei.Engine.Learner;
+using Sensei.Engine.Speech;
+using Sensei.Engine.Text;
 
 namespace Sensei.Engine.Tools.Speech;
 
@@ -62,6 +66,49 @@ public sealed class SpeakTool : SenseiTool<SpeakArgs>
 
     protected override JsonTypeInfo<SpeakArgs> ArgsTypeInfo => SenseiJsonContext.Default.SpeakArgs;
 
-    public override Task<ToolResult> ExecuteAsync(SpeakArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+    /// <summary>S80: presentation text must not mention the hidden working level.</summary>
+    public override string? ValidateArguments(SpeakArgs args)
+    {
+        foreach (var s in args.Segments)
+            if (HiddenLevelGuard.Check(s.Text) || HiddenLevelGuard.Check(s.Reading) || HiddenLevelGuard.Check(s.Romaji) || HiddenLevelGuard.Check(s.Translation))
+                return HiddenLevelGuard.Detail;
+        return null;
+    }
+
+    public override async Task<ToolResult> ExecuteAsync(SpeakArgs args, ToolContext context, CancellationToken ct)
+    {
+        // S37a, in document order.
+        for (var i = 0; i < args.Segments.Count; i++)
+        {
+            var s = args.Segments[i];
+            var length = TextRules.ScalarLength(s.Text);
+            var max = s.Lang == SpeechLanguages.Japanese ? SpeechPresenter.MaxJapaneseCharacters : SpeechPresenter.MaxEnglishCharacters;
+            if (length > max)
+                return context.Failure(ToolErrorCodes.SpeechLimitExceeded, $"segments[{i}].text: {length} characters, at most {max} for lang '{s.Lang}'");
+        }
+
+        // S37b, in document order.
+        for (var i = 0; i < args.Segments.Count; i++)
+        {
+            var s = args.Segments[i];
+            var hasJapanese = TextRules.ContainsJapanese(s.Text);
+            if (s.Lang == SpeechLanguages.Japanese && !hasJapanese || s.Lang == SpeechLanguages.English && hasJapanese)
+                return context.Failure(ToolErrorCodes.InvalidArguments, SpeechPresenter.SplitLanguageSegments);
+        }
+
+        var segments = args.Segments.Select(s => new SpeechSegment(s.Lang, s.Text, s.Reading, s.Romaji, s.Translation)).ToList();
+        var characters = SpeechPresenter.CountCharacters(segments);
+        SpeechPlan? plan = null;
+        var gate = context.Locked(() =>
+        {
+            // S37c
+            if (context.Turn.SpokenCharacters + characters > SpeechPresenter.MaxSpokenCharactersPerTurn)
+                return context.Failure(ToolErrorCodes.SpeechLimitExceeded,
+                    $"{characters} more characters would pass the {SpeechPresenter.MaxSpokenCharactersPerTurn} spoken per turn ({context.Turn.SpokenCharacters} already spoken)");
+            plan = SpeechPresenter.Plan(context, segments, args.Pace, characters, SpeechPresenter.ActiveTaskTargets(context), isReplay: false);
+            return context.Success();
+        });
+        if (plan is null) return gate;
+        return await SpeechPresenter.PresentAsync(context, plan, ct).ConfigureAwait(false);
+    }
 }

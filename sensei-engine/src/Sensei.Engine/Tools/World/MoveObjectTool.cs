@@ -3,6 +3,8 @@ using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
+using Sensei.Engine.Learner;
+using Sensei.Engine.World;
 
 namespace Sensei.Engine.Tools.World;
 
@@ -59,6 +61,22 @@ public sealed class MoveObjectTool : SenseiTool<MoveObjectArgs>
         if (args.Destination.ContainerId is not null) yield return args.Destination.ContainerId;
     }
 
+    public override string? ValidateArguments(MoveObjectArgs args) =>
+        (args.Destination.Region is null) == (args.Destination.ContainerId is null)
+            ? "destination: exactly one of region or container_id is required"
+            : null;
+
     public override Task<ToolResult> ExecuteAsync(MoveObjectArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+        Task.FromResult(context.Locked(() =>
+        {
+            var failure = context.World.ValidateDestination(args.ObjectId, args.Destination.Region, args.Destination.ContainerId);
+            if (failure is not null) return context.Failure(failure);
+
+            // S31d: the demonstration is help for the task that is active when Sensei moves the object.
+            if (args.Purpose == MovePurposes.Demonstrate && context.Tasks.Active is { } task)
+                context.RecordAssistanceForTask(AssistanceKinds.Demonstration, task);
+
+            var committed = context.World.CommitMove(args.ObjectId, args.Destination.Region, args.Destination.ContainerId, SceneActors.Sensei, args.Purpose, context.TurnId);
+            return context.Success(committed.InstanceIds);
+        }));
 }

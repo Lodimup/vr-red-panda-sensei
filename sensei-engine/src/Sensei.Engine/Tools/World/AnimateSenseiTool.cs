@@ -39,6 +39,14 @@ public sealed class AnimateSenseiTool : SenseiTool<AnimateSenseiArgs>
         if (args.TargetId is not null) yield return args.TargetId;
     }
 
-    public override Task<ToolResult> ExecuteAsync(AnimateSenseiArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+    public override Task<ToolResult> ExecuteAsync(AnimateSenseiArgs args, ToolContext context, CancellationToken ct)
+    {
+        var result = context.Locked(() =>
+            args.TargetId is not null && !context.World.Exists(args.TargetId)
+                ? context.Failure(ToolErrorCodes.UnknownObject, $"target_id: unknown object '{args.TargetId}'")
+                : context.Success());
+
+        if (result.IsSuccess) context.Events.Animate(args.Animation, args.TargetId);
+        return Task.FromResult(result);
+    }
 }
