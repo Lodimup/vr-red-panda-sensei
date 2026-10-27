@@ -124,7 +124,7 @@ public sealed class AgentWireTests
     }
 
     [Fact]
-    public async Task S85_empty_arguments_from_the_wire_count_as_an_empty_object()
+    public async Task S21_blank_arguments_from_the_wire_are_malformed_json_and_the_tool_does_not_run()
     {
         var probe = new ProbeTool();
         using var server = new FakeChatServer().EnqueueToolCalls(("call_1", "test_probe", "")).EnqueueText("done");
@@ -134,7 +134,8 @@ public sealed class AgentWireTests
 
         var content = JsonDocument.Parse(ToolMessage(server.Requests[1]).GetProperty("content").GetString()!).RootElement;
         Assert.Equal("invalid_arguments", content.GetProperty("error_code").GetString());
-        Assert.Contains("action", content.GetProperty("detail").GetString());
+        Assert.Equal("malformed JSON", content.GetProperty("detail").GetString());
+        Assert.Equal(0, probe.Executions);
     }
 
     [Fact]

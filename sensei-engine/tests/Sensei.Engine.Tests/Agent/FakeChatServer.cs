@@ -41,8 +41,8 @@ public sealed class FakeChatServer : IDisposable
         get { lock (_sync) return _requests.ToList(); }
     }
 
-    public FakeChatServer EnqueueText(string content, int promptTokens = 11, int completionTokens = 7) =>
-        EnqueueJson(200, Completion(new JsonObject { ["role"] = "assistant", ["content"] = content }, "stop", promptTokens, completionTokens));
+    public FakeChatServer EnqueueText(string content, int promptTokens = 11, int completionTokens = 7, TimeSpan? delay = null) =>
+        EnqueueJson(200, Completion(new JsonObject { ["role"] = "assistant", ["content"] = content }, "stop", promptTokens, completionTokens), delay);
 
     /// <summary>One assistant message with tool calls; <c>arguments</c> is the raw string the model sent (may be invalid JSON).</summary>
     public FakeChatServer EnqueueToolCalls(params (string Id, string Name, string Arguments)[] calls)

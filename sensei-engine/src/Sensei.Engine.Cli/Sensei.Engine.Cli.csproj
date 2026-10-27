@@ -15,4 +15,8 @@
     <ProjectReference Include="../Sensei.Engine/Sensei.Engine.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sensei.Engine.Tests" />
+  </ItemGroup>
+
 </Project>
