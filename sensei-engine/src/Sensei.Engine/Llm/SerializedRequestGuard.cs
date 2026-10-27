@@ -20,10 +20,12 @@ namespace Sensei.Engine.Llm;
 /// is written as JSON by an iterative writer (explicit stack, no recursion; a value of a type the writer does not know is written by the
 /// standard serializer under its own runtime type, so a <see cref="Uri"/> or a record is seen as the text it would send), and that JSON is
 /// walked by the same iterative sanitizer the wire guard uses (<see cref="OutboundGuard"/>: at most <see cref="OutboundGuard.MaxValues"/>
-/// values in all, every string value and property name cleaned after unescaping, JSON held in a string treated as a string). A value
-/// whose JSON needed cleaning reaches the client as the cleaned JSON element; every string of a message (text, ids, names, author) is cleaned as
-/// text; messages with nothing to clean are passed on as they are. A value that cannot be written, or a request over the cap, is not
-/// passed on: <see cref="OutboundRejectedException"/>.
+/// values in all, every string value and property name cleaned after unescaping, JSON held in a string treated as a string). A JSON
+/// element or node inside such a value is walked node by node (<see cref="JsonRedaction.WriteJsonTree"/>), never printed to text first.
+/// A value whose JSON needed cleaning reaches the client as the cleaned JSON element; every string of a message (text, ids, names, author)
+/// is cleaned as text; messages with nothing to clean are passed on as they are. Every text value handed over (each text content, and the
+/// instructions) is one value of the same budget, so the cap is for the whole request. A value that cannot be written, or a request over
+/// the cap, is not passed on: <see cref="OutboundRejectedException"/>.
 /// </summary>
 /// <remarks>
 /// The client built by <see cref="ChatClientFactory"/> does not need this wrapper: its guard is in the request pipeline and sees the real
@@ -56,18 +58,32 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
     }
 
     public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
-        CancellationToken cancellationToken = default) =>
-        base.GetResponseAsync(Guarded(messages), GuardedOptions(options), cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        // One budget for the whole request: the messages first, then the instructions.
+        var budget = OutboundGuard.MaxValues;
+        var guarded = Guarded(messages, ref budget);
+        return base.GetResponseAsync(guarded, GuardedOptions(options, ref budget), cancellationToken);
+    }
 
     public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
-        ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-        base.GetStreamingResponseAsync(Guarded(messages), GuardedOptions(options), cancellationToken);
+        ChatOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        var budget = OutboundGuard.MaxValues;
+        var guarded = Guarded(messages, ref budget);
+        return base.GetStreamingResponseAsync(guarded, GuardedOptions(options, ref budget), cancellationToken);
+    }
 
     /// <summary>The messages that may be passed on; throws <see cref="OutboundRejectedException"/> if none may.</summary>
     internal List<ChatMessage> Guarded(IEnumerable<ChatMessage> messages)
     {
-        var source = messages as List<ChatMessage> ?? messages.ToList();
         var budget = OutboundGuard.MaxValues;
+        return Guarded(messages, ref budget);
+    }
+
+    private List<ChatMessage> Guarded(IEnumerable<ChatMessage> messages, ref int budget)
+    {
+        var source = messages as List<ChatMessage> ?? messages.ToList();
         var result = new List<ChatMessage>(source.Count);
         var anyChanged = false;
         foreach (var message in source)
@@ -77,6 +93,12 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
             result.Add(guarded);
         }
         return anyChanged ? result : source;
+    }
+
+    /// <summary>One string value handed to the client: it counts against the same budget as a structured value does.</summary>
+    private static void Charge(ref int budget)
+    {
+        if (--budget < 0) throw new OutboundRejectedException(OutboundRejectedException.TooManyValues);
     }
 
     private ChatMessage GuardedMessage(ChatMessage message, ref int budget)
@@ -102,6 +124,7 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
         {
             case TextContent text:
             {
+                Charge(ref budget);
                 var clean = _secrets.Sanitize(text.Text);
                 return string.Equals(clean, text.Text, StringComparison.Ordinal) ? text : new TextContent(clean);
             }
@@ -210,9 +233,20 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
         }
     }
 
-    /// <summary>One value: a leaf is written at once; a container is opened and its items are queued on <paramref name="open"/>.</summary>
+    /// <summary>
+    /// One value: a leaf is written at once; a container is opened and its items are queued on <paramref name="open"/>. A JSON element or
+    /// node is written node by node by the shared iterative tree walk (<see cref="JsonRedaction.WriteJsonTree"/>), which counts every
+    /// value in it on <paramref name="count"/>; no framework depth limit sits in front of it.
+    /// </summary>
     private static void Write(object? value, Utf8JsonWriter writer, Stack<(IEnumerator Items, bool IsObject)> open, ref int count, int limit)
     {
+        if (value is JsonElement || value is JsonNode)
+        {
+            var unused = false;
+            if (!JsonRedaction.WriteJsonTree(value, writer, null, limit, ref count, ref unused))
+                throw new OutboundRejectedException(OutboundRejectedException.TooManyValues);
+            return;
+        }
         if (++count > limit) throw new OutboundRejectedException(OutboundRejectedException.TooManyValues);
         switch (value)
         {
@@ -224,12 +258,6 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
                 break;
             case bool flag:
                 writer.WriteBooleanValue(flag);
-                break;
-            case JsonElement element:
-                writer.WriteRawValue(element.GetRawText());
-                break;
-            case JsonNode node:
-                writer.WriteRawValue(node.ToJsonString());
                 break;
             case IDictionary<string, object?> map:
                 writer.WriteStartObject();
@@ -247,10 +275,11 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
         }
     }
 
-    /// <summary>The instructions are plain text the engine owns; they are cleaned as text, on a copy of the options.</summary>
-    private ChatOptions? GuardedOptions(ChatOptions? options)
+    /// <summary>The instructions are plain text the engine owns; they are one string value of the request and are cleaned as text, on a copy of the options.</summary>
+    private ChatOptions? GuardedOptions(ChatOptions? options, ref int budget)
     {
         if (options?.Instructions is not { Length: > 0 } instructions) return options;
+        Charge(ref budget);
         var cleaned = _secrets.Sanitize(instructions);
         if (string.Equals(cleaned, instructions, StringComparison.Ordinal)) return options;
         var copy = options.Clone();

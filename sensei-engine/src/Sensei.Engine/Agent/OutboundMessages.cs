@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.AI;
+using Sensei.Engine.Llm;
 using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Agent;
@@ -16,16 +18,28 @@ namespace Sensei.Engine.Agent;
 /// </summary>
 internal static class OutboundMessages
 {
-    /// <summary>The copy of <paramref name="messages"/> that may be sent; <paramref name="notes"/> receives what was removed or replaced, by type name.</summary>
+    /// <summary>
+    /// The copy of <paramref name="messages"/> that may be sent; <paramref name="notes"/> receives what was removed or replaced, by type name.
+    /// This is the boundary of the in-memory preparation: a value that cannot be read or written anywhere in it (a disposed JSON element, a
+    /// sequence whose enumerator throws, a dictionary that cannot be copied) is not sent, and the only thing that leaves is the engine's
+    /// own <see cref="OutboundRejectedException"/> (reason <c>not_serializable</c>); the foreign exception and its text are dropped.
+    /// </summary>
     public static List<ChatMessage> Sanitized(IEnumerable<ChatMessage> messages, Secrets secrets, List<string> notes)
     {
-        var copy = new List<ChatMessage>();
-        foreach (var message in messages)
+        try
         {
-            var sanitized = Sanitized(message, secrets, notes);
-            if (sanitized is not null) copy.Add(sanitized);
+            var copy = new List<ChatMessage>();
+            foreach (var message in messages)
+            {
+                var sanitized = Sanitized(message, secrets, notes);
+                if (sanitized is not null) copy.Add(sanitized);
+            }
+            return copy;
         }
-        return copy;
+        catch (Exception)
+        {
+            throw new OutboundRejectedException(OutboundRejectedException.NotSerializable);
+        }
     }
 
     private static ChatMessage? Sanitized(ChatMessage message, Secrets secrets, List<string> notes)
