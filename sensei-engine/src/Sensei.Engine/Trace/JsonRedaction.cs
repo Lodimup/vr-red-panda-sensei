@@ -579,6 +579,47 @@ internal static class JsonRedaction
     /// </summary>
     public static object? SanitizedValue(object? value, Secrets secrets) => SanitizedValue(value, secrets, out _);
 
+    /// <summary>
+    /// True when a sanitized value (what <see cref="SanitizedValue(object?, Secrets, out bool)"/> returns: dictionaries, lists, JSON
+    /// elements and leaves) nests more than <paramref name="limit"/> levels, counted as a JSON parser counts them: the outermost container
+    /// is level 1. Iterative, one stack entry per value, and it stops at the first value past the limit.
+    /// </summary>
+    internal static bool NestsDeeperThan(object? value, int limit)
+    {
+        var pending = new Stack<(object? Value, int Depth)>();
+        pending.Push((value, 0));
+        while (pending.Count > 0)
+        {
+            var (current, depth) = pending.Pop();
+            switch (current)
+            {
+                case string:
+                    break;
+                case JsonElement element:
+                    if (element.ValueKind == JsonValueKind.Object)
+                    {
+                        if (depth + 1 > limit) return true;
+                        foreach (var property in element.EnumerateObject()) pending.Push((property.Value, depth + 1));
+                    }
+                    else if (element.ValueKind == JsonValueKind.Array)
+                    {
+                        if (depth + 1 > limit) return true;
+                        foreach (var item in element.EnumerateArray()) pending.Push((item, depth + 1));
+                    }
+                    break;
+                case IDictionary<string, object?> map:
+                    if (depth + 1 > limit) return true;
+                    foreach (var item in map.Values) pending.Push((item, depth + 1));
+                    break;
+                case IEnumerable sequence:
+                    if (depth + 1 > limit) return true;
+                    foreach (var item in sequence) pending.Push((item, depth + 1));
+                    break;
+            }
+        }
+        return false;
+    }
+
     /// <inheritdoc cref="SanitizedValue(object?, Secrets)"/>
     public static object? SanitizedValue(object? value, Secrets secrets, out bool oversized)
     {

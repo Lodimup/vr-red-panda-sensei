@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using Microsoft.Extensions.AI;
 using Sensei.Engine.Llm;
+using Sensei.Engine.Tools.Schema;
 using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Agent;
@@ -74,6 +75,12 @@ internal static class OutboundMessages
                     var clean = JsonRedaction.SanitizedValue(new Dictionary<string, object?>(call.Arguments), secrets, out var oversized);
                     arguments = clean as IDictionary<string, object?> ?? new Dictionary<string, object?>();
                     if (oversized) notes.Add("arguments over " + JsonRedaction.MaxNodes + " values (replaced by an empty object)");
+                    else if (JsonRedaction.NestsDeeperThan(clean, ArgumentSchema.MaxArgumentDepth))
+                    {
+                        // Deeper than the tool-argument parser takes (S21): the call was answered invalid_arguments, so nothing executable is lost.
+                        arguments = new Dictionary<string, object?>();
+                        notes.Add("arguments nested over " + ArgumentSchema.MaxArgumentDepth + " levels (replaced by an empty object)");
+                    }
                 }
                 // A call the provider named with an empty string (S85) goes back under a placeholder: the wire format needs some name, and
                 // the call id is what pairs it with the engine result.

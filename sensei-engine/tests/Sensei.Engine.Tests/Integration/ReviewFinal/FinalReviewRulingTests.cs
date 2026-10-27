@@ -135,21 +135,8 @@ public sealed class OutboundAllowListTests
         var sent = OutboundMessages.Sanitized(messages, Known, notes);
 
         var clean = (FunctionCallContent)sent[0].Contents[0];
-        object? walk = clean.Arguments!["deep"];
-        var levels = 0;
-        while (walk is not string)
-        {
-            walk = walk switch
-            {
-                List<object?> list => list.Single(),
-                Dictionary<string, object?> map => map["k"],
-                _ => throw new Xunit.Sdk.XunitException("unexpected node " + walk?.GetType()),
-            };
-            levels++;
-        }
-        Assert.Equal(300, levels);
-        Assert.Equal("[redacted]", walk);
-        Assert.Empty(notes);
+        Assert.Empty(clean.Arguments!);
+        Assert.Equal("arguments nested over 32 levels (replaced by an empty object)", Assert.Single(notes));
     }
 
     [Fact]
