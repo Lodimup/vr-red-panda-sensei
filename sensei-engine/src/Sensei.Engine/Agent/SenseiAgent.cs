@@ -20,7 +20,7 @@ namespace Sensei.Engine.Agent;
 /// persistence → <see cref="RoundLimitingChatClient"/> → the provider client. The agent uses
 /// <c>UseProvidedChatClientAsIs</c> so the framework does not wrap the stack a second time.
 /// </remarks>
-internal sealed class SenseiAgentRunner : IAgentRunner
+internal sealed class SenseiAgent : IAgentRunner
 {
     private readonly EngineCore _core;
     private readonly ContextRenderer _renderer;
@@ -30,7 +30,7 @@ internal sealed class SenseiAgentRunner : IAgentRunner
     private TurnScope? _active;
     private long _eventMark;
 
-    public SenseiAgentRunner(EngineCore core)
+    public SenseiAgent(EngineCore core)
     {
         _core = core;
         _renderer = new ContextRenderer(core);

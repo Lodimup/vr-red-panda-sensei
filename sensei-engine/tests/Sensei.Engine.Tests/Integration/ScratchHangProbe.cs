@@ -152,3 +152,20 @@ public class ScratchBlankName
         foreach (var req in server.Requests) _out.WriteLine(req.Body.Length > 1500 ? req.Body[^900..] : req.Body);
     }
 }
+
+public class ScratchReflect
+{
+    private readonly ITestOutputHelper _out;
+    public ScratchReflect(ITestOutputHelper o) { _out = o; }
+
+    [Fact]
+    public void Reflect()
+    {
+        var t = typeof(Microsoft.Agents.AI.ChatClientAgent);
+        _out.WriteLine($"sealed={t.IsSealed} abstract={t.IsAbstract}");
+        foreach (var c in t.GetConstructors(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+            _out.WriteLine(c.ToString() + " public=" + c.IsPublic + " family=" + c.IsFamily);
+        var asm = typeof(Sensei.Engine.SenseiEngine).Assembly;
+        foreach (var x in asm.GetTypes().Where(x => x.Name.Contains("Agent") || x.Name.Contains("Context"))) _out.WriteLine(x.FullName + " : " + x.BaseType);
+    }
+}

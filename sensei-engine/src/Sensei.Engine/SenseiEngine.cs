@@ -40,7 +40,7 @@ public sealed class SenseiEngine : IAsyncDisposable
     private SenseiEngine(EngineCore core, Func<EngineCore, IAgentRunner>? runnerFactory)
     {
         _core = core;
-        _runner = runnerFactory?.Invoke(core) ?? new SenseiAgentRunner(core);
+        _runner = runnerFactory?.Invoke(core) ?? new SenseiAgent(core);
     }
 
     /// <summary>S7: loads or creates the profile, appends this session's record and saves.</summary>
@@ -80,6 +80,19 @@ public sealed class SenseiEngine : IAsyncDisposable
             var problem = profile.ProfileId != options.ProfileId ? "profile_id" : profile.FindShapeProblem();
             if (problem is not null)
                 throw new ProfileCorruptException(options.ProfileId, options.ProfileId + ".json", new FormatException("invalid field: " + problem));
+            if (stored is null)
+            {
+                // S7: a profile that did not exist is saved as created (version 1, no sessions); the session record is appended and saved after.
+                try
+                {
+                    await options.ProfileStore.SaveAsync(LearnerBook.Clone(profile), ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    FaultCategories.Tag(ex, FaultCategories.ProfileStore);
+                    throw;
+                }
+            }
             profile.Sessions.Add(new SessionRecord { SessionId = sessionId, StartedAt = now });
 
             var core = new EngineCore(options, clock, sessionId, secrets, profile, extraTools);
