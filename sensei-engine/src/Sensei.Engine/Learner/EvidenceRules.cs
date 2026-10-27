@@ -155,13 +155,14 @@ public static class EvidenceRules
     }
 
     /// <summary>
-    /// S52, S101: target keys due for review, distinct, in order of first attempt. A target is due when its latest resolved outcome
-    /// is <c>confirmed_incorrect</c>, its label is <c>used_with_help</c>, its latest attempt is <c>unresolved</c>, or its label is
-    /// <c>used_independently</c> with every independent success in <paramref name="currentSessionId"/>.
+    /// S52, S97, S101: targets <c>(dimension, key)</c> due for review, in order of first attempt; two dimensions sharing a key are two
+    /// queue items. A target is due when its latest resolved outcome is <c>confirmed_incorrect</c>, its label is <c>used_with_help</c>,
+    /// its latest attempt is <c>unresolved</c>, or its label is <c>used_independently</c> with every independent success in
+    /// <paramref name="currentSessionId"/>.
     /// </summary>
-    public static IReadOnlyList<string> ComputeReviewDue(IReadOnlyList<EvidenceRecord> evidence, string currentSessionId)
+    public static IReadOnlyList<(string Dimension, string Key)> ComputeReviewDue(IReadOnlyList<EvidenceRecord> evidence, string currentSessionId)
     {
-        var due = new List<string>();
+        var due = new List<(string Dimension, string Key)>();
         foreach (var (target, attempts) in GroupByTarget(evidence))
         {
             var label = LabelOf(attempts);
@@ -171,7 +172,7 @@ public static class EvidenceRules
                         || label == TargetLabels.UsedWithHelp
                         || attempts[attempts.Count - 1].Outcome == AttemptOutcomes.Unresolved
                         || (label == TargetLabels.UsedIndependently && independent.All(a => a.SessionId == currentSessionId));
-            if (isDue && !due.Contains(target.Key)) due.Add(target.Key);
+            if (isDue) due.Add(target);
         }
         return due;
     }

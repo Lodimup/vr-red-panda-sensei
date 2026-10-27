@@ -449,7 +449,7 @@ public sealed class SenseiEngine : IAsyncDisposable
             previousText = target.Text;
             var profile = _core.Learner.Profile;
             foreach (var attempt in profile.Evidence)
-                if (attempt.SourceUtteranceId == target.Id) attempt.Superseded = true;
+                if (attempt.SourceUtteranceId == target.Id && attempt.SessionId == _core.SessionId) attempt.Superseded = true;
             LevelRules.RecomputeAfterSupersede(profile, _core.Clock.GetUtcNow());
         }
         await _core.Learner.SaveAsync(CancellationToken.None).ConfigureAwait(false);

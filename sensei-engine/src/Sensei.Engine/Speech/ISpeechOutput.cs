@@ -29,16 +29,16 @@ public sealed record SpeechRequest(string UtteranceId, long GenerationId, IReadO
 }
 
 /// <summary>Outcome of a speech request. <c>Status</c>: <c>completed</c> | <c>cancelled</c> | <c>failed</c> (S37d, S89).</summary>
-public sealed record SpeechOutcome(string Status, string? Error, int SegmentsPresented = 0)
+public sealed record SpeechOutcome(string Status, string? Error, int? SegmentsPresented = null)
 {
     /// <summary>
     /// Segments that reached the learner, clamped to 0..<paramref name="segmentCount"/>.
-    /// A <c>completed</c> outcome counts as every segment presented.
+    /// An explicit <c>SegmentsPresented</c> always wins; a <c>completed</c> outcome without one counts as every segment presented.
     /// </summary>
     public int PresentedOf(int segmentCount)
     {
-        if (Status == SpeechStatuses.Completed) return segmentCount;
-        return Math.Max(0, Math.Min(segmentCount, SegmentsPresented));
+        if (SegmentsPresented is { } explicitCount) return Math.Max(0, Math.Min(segmentCount, explicitCount));
+        return Status == SpeechStatuses.Completed ? segmentCount : 0;
     }
 }
 

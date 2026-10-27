@@ -124,7 +124,10 @@ internal static class SpeechPresenter
             case SpeechStatuses.Completed:
                 return ctx.Success(null, Data(plan, outcome, presented, card, withPresented: false));
             case SpeechStatuses.Cancelled:
-                return ctx.Cancelled();
+                var cancelled = ctx.Cancelled();
+                // S37d, S90: a cancelled speech that entered history names its utterance.
+                if (presented >= 1) cancelled.Data = Data(plan, outcome, presented, card, withPresented: false);
+                return cancelled;
             default:
                 var reason = string.IsNullOrWhiteSpace(outcome.Error) ? "speech output failed" : outcome.Error!;
                 var detail = $"speech failed after {presented} of {plan.Segments.Count} segments were presented: {reason}";

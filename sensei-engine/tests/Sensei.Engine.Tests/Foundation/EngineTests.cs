@@ -610,8 +610,8 @@ public sealed class EngineTests
         {
             sourceId = t.Core.Utterances.All.Single().Id;
             var p = t.Core.Learner.Profile;
-            p.Evidence.Add(new EvidenceRecord { AttemptId = "a1", SourceUtteranceId = sourceId, Target = new SkillTarget { Dimension = "production", Key = "kudasai" } });
-            p.Evidence.Add(new EvidenceRecord { AttemptId = "a2", SourceUtteranceId = "l99", Target = new SkillTarget { Dimension = "production", Key = "kudasai" } });
+            p.Evidence.Add(new EvidenceRecord { AttemptId = "a1", SessionId = t.Engine.SessionId, SourceUtteranceId = sourceId, Target = new SkillTarget { Dimension = "production", Key = "kudasai" } });
+            p.Evidence.Add(new EvidenceRecord { AttemptId = "a2", SessionId = t.Engine.SessionId, SourceUtteranceId = "l99", Target = new SkillTarget { Dimension = "production", Key = "kudasai" } });
         }
         var saves = t.Store.SaveCount;
         var r = await t.Engine.CorrectLastTranscriptAsync("りんごをください");

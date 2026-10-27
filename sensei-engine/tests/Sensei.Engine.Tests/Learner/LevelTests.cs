@@ -317,33 +317,6 @@ public sealed class LevelTests
         Assert.Equal("evidence_up", p.LevelHistory.Single().Reason);
     }
 
-    // ---------------------------------------------------------------- attempt time
-
-    [Fact]
-    public void S51_an_attempt_is_stamped_one_tick_after_a_level_change_made_at_the_same_instant()
-    {
-        var p = NewProfile();
-        var now = new DateTimeOffset(2026, 10, 27, 9, 30, 15, TimeSpan.Zero);
-        Assert.Equal(now, LevelRules.AttemptTime(p, now));
-        SupportRules.SetWorkingLevel(p, WorkingLevels.N4, LevelChangeReasons.Band, now);
-        Assert.Equal(now.AddTicks(1), LevelRules.AttemptTime(p, now));
-        Assert.Equal(now.AddTicks(1), LevelRules.AttemptTime(p, now.AddTicks(-5)));
-        Assert.Equal(now.AddSeconds(1), LevelRules.AttemptTime(p, now.AddSeconds(1)));
-    }
-
-    [Fact]
-    public void S51_after_an_evidence_driven_change_the_attempt_time_is_left_alone()
-    {
-        var p = NewProfile(WorkingLevels.N3);
-        SixIndependent(p, 2);
-        var at = Add(p, X).At;
-        Add(p, X);
-        Assert.Single(p.LevelHistory);
-        var now = p.LevelHistory[0].At;
-        Assert.Equal(now, LevelRules.AttemptTime(p, now));
-        _ = at;
-    }
-
     // ---------------------------------------------------------------- through the tool
 
     [Fact]

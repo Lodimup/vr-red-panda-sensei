@@ -85,6 +85,7 @@ public static class SupportRules
             Reason = reason,
             At = at,
             EvidenceIds = evidenceIds,
+            AttemptCount = profile.Evidence.Count,
         });
         profile.WorkingLevel = level;
         return true;
