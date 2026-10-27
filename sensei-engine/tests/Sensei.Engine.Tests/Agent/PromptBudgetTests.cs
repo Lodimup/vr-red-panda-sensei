@@ -73,6 +73,7 @@ public sealed class PromptBudgetTests
         var tools = body.GetProperty("tools").EnumerateArray().ToList();
         Assert.Equal(t.Engine.ToolNames.ToArray(), tools.Select(x => x.GetProperty("function").GetProperty("name").GetString()!).ToArray());
         Assert.Equal("auto", body.GetProperty("tool_choice").GetString());
+        Assert.True(body.GetProperty("parallel_tool_calls").GetBoolean()); // the loop is built for several calls in one response
         foreach (var tool in tools)
         {
             var schema = tool.GetProperty("function").GetProperty("parameters").GetRawText();

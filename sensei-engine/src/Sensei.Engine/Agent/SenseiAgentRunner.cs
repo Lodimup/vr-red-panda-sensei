@@ -60,6 +60,7 @@ internal sealed class SenseiAgentRunner : IAgentRunner
                 {
                     Instructions = SystemPrompt.Text,
                     Tools = offered.Cast<AITool>().ToList(),
+                    AllowMultipleToolCalls = true,
                 },
                 ChatHistoryProvider = _history,
                 AIContextProviders = new AIContextProvider[] { new SenseiContextProvider(_renderer, () => _active) },

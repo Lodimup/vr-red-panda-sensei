@@ -61,13 +61,18 @@ internal sealed class RequestOptionsChatClient : DelegatingChatClient
         var functions = (applied.Tools ?? new List<AITool>()).OfType<AIFunctionDeclaration>().ToList();
         if (functions.Count > 0 && functions.Count == applied.Tools!.Count) applied.Tools = null;
         else functions.Clear();
+        var allowParallel = applied.AllowMultipleToolCalls;
         var previous = applied.RawRepresentationFactory;
         applied.RawRepresentationFactory = client =>
         {
             var raw = previous?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
             foreach (var function in functions)
                 raw.Tools.Add(ChatTool.CreateFunctionTool(function.Name, function.Description, BinaryData.FromString(CompactSchema(function))));
-            if (functions.Count > 0) raw.ToolChoice ??= ChatToolChoice.CreateAutoChoice();
+            if (functions.Count > 0)
+            {
+                raw.ToolChoice ??= ChatToolChoice.CreateAutoChoice();
+                raw.AllowParallelToolCalls ??= allowParallel;
+            }
             SetReasoning(raw);
             return raw;
         };
