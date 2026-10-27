@@ -157,7 +157,7 @@ public sealed class BoundaryReviewFinalTests
     [Fact]
     public async Task F05_provider_status_getter_must_not_hang_the_engine()
     {
-        var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.GetEnvironmentVariable("DOTNET_ROOT")!, "dotnet"))
+        var start = new System.Diagnostics.ProcessStartInfo((Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? Path.Combine(Environment.GetEnvironmentVariable("DOTNET_ROOT")!, "dotnet")))
         {
             RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
         };

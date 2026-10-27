@@ -12,7 +12,7 @@ public sealed class ProviderGraph
     [InlineData("message")]
     public async Task F04_provider_exception_graph_must_not_crash_or_hang_host(string mode)
     {
-        var start = new ProcessStartInfo(Path.Combine(Environment.GetEnvironmentVariable("DOTNET_ROOT")!, "dotnet"))
+        var start = new ProcessStartInfo((Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? Path.Combine(Environment.GetEnvironmentVariable("DOTNET_ROOT")!, "dotnet")))
         {
             RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
         };
