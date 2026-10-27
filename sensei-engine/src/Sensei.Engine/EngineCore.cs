@@ -86,8 +86,52 @@ internal sealed class EngineCore
     /// <summary>The call whose <see cref="ToolContext.Locked"/> body is running; set and read only under <see cref="Sync"/> (S35d).</summary>
     internal ToolContext? ActiveContext { get; set; }
 
-    /// <summary>S77: for an exception filter — true, with a redacted copy, when <paramref name="ex"/> carries a known secret or credential-pattern match.</summary>
-    public bool TrySanitize(Exception ex, out Exception safe) => ExceptionSanitizer.TryRewrite(ex, Secrets, out safe);
+    /// <summary>
+    /// Incremented under the lock whenever <see cref="ClearSessionState"/> removes the session's effects (S87). A commit made
+    /// under an earlier value no longer exists.
+    /// </summary>
+    internal long ResetEpoch { get; private set; }
+
+    /// <summary>
+    /// S77: the exception boundary of every public <see cref="SenseiEngine"/> member. Returns what the host sees for
+    /// <paramref name="ex"/> (see <see cref="ExceptionSanitizer.ForHost"/>) and writes the original, sanitized in full, to the trace.
+    /// Never throws; call outside the engine lock.
+    /// </summary>
+    public Exception Translate(string operation, Exception ex)
+    {
+        var safe = ExceptionSanitizer.ForHost(ex, Secrets, out var detail);
+        if (detail is not null) TraceFailure(operation, detail);
+        return safe;
+    }
+
+    private void TraceFailure(string operation, string detail)
+    {
+        try
+        {
+            lock (Sync) EnqueueTrace(FailureEntry(Clock.GetUtcNow(), SessionId, CurrentTurn, World.Revision, operation, detail));
+            DrainTraces();
+        }
+        catch (Exception)
+        {
+            // The boundary must hand the host its sanitized exception even when tracing the original fails.
+        }
+    }
+
+    /// <summary>The trace line for an engine operation that failed outside a tool call (<paramref name="detail"/> is already sanitized).</summary>
+    internal static TraceEntry FailureEntry(DateTimeOffset at, string sessionId, TurnState? turn, long revision, string operation, string detail) => new()
+    {
+        At = at,
+        SessionId = sessionId,
+        TurnId = turn?.TurnId ?? 0,
+        GenerationId = turn?.GenerationId ?? 0,
+        Round = turn?.Round ?? 0,
+        CallId = "",
+        Tool = "engine:" + operation,
+        Arguments = detail,
+        Status = ToolStatuses.Failure,
+        ErrorCode = ToolErrorCodes.InternalError,
+        Revision = revision,
+    };
 
     /// <summary>Cancelled when the current generation is cancelled (S27, S66).</summary>
     public CancellationToken GenerationToken
@@ -203,6 +247,7 @@ internal sealed class EngineCore
             active.ClosedTurnId = CurrentTurnId;
             QueueTaskChanged(active);
         }
+        ResetEpoch++;
         Tasks.Clear();
         World.ClearForReset(CurrentTurnId);
         Assistance.Clear();
@@ -263,6 +308,9 @@ internal sealed class EngineCore
         }
         foreach (var raise in pending) raise();
     }
+
+    /// <summary>Queues a notification raised by the current operation's <see cref="FlushNotifications"/>, after its final settlement and outside the lock (S69). Call under the lock, after the change committed.</summary>
+    public void QueueNotification(Action raise) => Enqueue(raise);
 
     private void Enqueue(Action raise) => (_scope.Value?.Items ?? _unscoped).Add(raise);
 
