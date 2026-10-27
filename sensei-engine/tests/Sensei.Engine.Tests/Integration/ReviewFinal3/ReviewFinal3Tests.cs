@@ -95,22 +95,20 @@ public sealed class ReviewFinal3Tests
     [Fact]
     public async Task F03_text_values_must_count_toward_the_whole_request_cap()
     {
-        var contents = Enumerable.Range(0, 20_001).Select(_ => (AIContent)new TextContent("answer")).ToList();
-        var chat = new ScriptedChatClient()
-            .Enqueue((_, _) => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, contents))))
-            .EnqueueText("never reached");
-        var trace = new RecordingTraceSink();
-        await using var t = await EngineAsync(chat, trace: trace);
-        Assert.Equal(TurnStatuses.Completed, (await t.Engine.RunTurnAsync("one")).Status);
+        var messages = Enumerable.Range(0, 20_001).Select(_ => new ChatMessage(ChatRole.User, "answer")).ToList();
+        var inner = new ScriptedChatClient().EnqueueText("never reached");
+        using var guard = new SerializedRequestGuard(inner, Secrets.None);
 
-        var turn = await t.Engine.RunTurnAsync("two");
+        var error = await Record.ExceptionAsync(() => guard.GetResponseAsync(messages));
+        var streamingError = await Record.ExceptionAsync(async () =>
+        {
+            await foreach (var _ in guard.GetStreamingResponseAsync(messages)) { }
+        });
 
-        var sentTexts = chat.RequestCount > 1 ? chat.Requests[1].Messages.SelectMany(m => m.Contents).OfType<TextContent>().Count() : 0;
-        Assert.True(turn.Status == TurnStatuses.Failed,
-            $"Expected rejection above 20000 values; status={turn.Status}; requests={chat.RequestCount}; text_values_sent={sentTexts}");
-        Assert.Equal("outbound request rejected: too_many_values", turn.ErrorDetail);
-        Assert.Equal(1, chat.RequestCount);
-        Assert.Single(trace.Entries, e => e.ErrorCode == "outbound_rejected");
+        Assert.True(error is OutboundRejectedException && streamingError is OutboundRejectedException && inner.RequestCount == 0,
+            $"Expected rejection above 20000 values; error={error?.GetType().Name ?? "none"}; streaming={streamingError?.GetType().Name ?? "none"}; requests={inner.RequestCount}; text_values={messages.Count}");
+        Assert.Equal("too_many_values", ((OutboundRejectedException)error!).Reason);
+        Assert.Equal("too_many_values", ((OutboundRejectedException)streamingError!).Reason);
     }
 
     [Fact]

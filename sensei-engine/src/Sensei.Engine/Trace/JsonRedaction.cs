@@ -147,6 +147,48 @@ internal static class JsonRedaction
         options.Converters.Add(new NodeConverter<JsonValue>());
     }
 
+    /// <summary>
+    /// How many CLR-backed leaves (a <see cref="JsonValue"/> that holds an object) may be in the middle of being serialized at once on one
+    /// thread. A leaf is written by the serializer, whose own nesting count starts at zero each time, and an object it writes may hold a node
+    /// that holds such a leaf again; each of those hand-overs is a new serializer and a new walk, so neither the serializer's nesting limit
+    /// (<see cref="ClrNestingLimit"/>) nor the walk's value limit sees the chain. A cycle through a node (an object that holds a node that holds
+    /// the object) ended the process with a stack overflow. The ninth leaf in flight is refused as not serializable.
+    /// </summary>
+    internal const int ClrReentryLimit = 8;
+
+    /// <summary>
+    /// One CLR-backed leaf that is being serialized (<see cref="WriteTreeLeaf"/>): how deep the chain of such leaves is, and the part of the
+    /// value limit that is already used when it starts, so the walks it causes below the first (<see cref="NodeConverter{T}"/>) draw on the
+    /// walk that is above them instead of each starting with a limit of its own. Kept per thread (a walk never awaits), nothing is shared
+    /// between threads.
+    /// </summary>
+    private sealed class ReentryFrame
+    {
+        public ReentryFrame(ReentryFrame? parent, int maxValues, int used)
+        {
+            Parent = parent;
+            Depth = parent is null ? 1 : parent.Depth + 1;
+            MaxValues = maxValues;
+            Used = used;
+        }
+
+        public ReentryFrame? Parent { get; }
+
+        public int Depth { get; }
+
+        /// <summary>The value limit of the walk that holds the leaf.</summary>
+        public int MaxValues { get; }
+
+        /// <summary>The values that walk had counted before the leaf's own, the leaf's value itself excluded.</summary>
+        public int Used { get; }
+
+        /// <summary>A nested walk stopped because the limit above it was used up, not because of its own limit: the leaf is then over the limit, not unwritable.</summary>
+        public bool Exceeded { get; set; }
+    }
+
+    [ThreadStatic]
+    private static ReentryFrame? t_reentry;
+
     /// <summary>Writes a JSON node held by a CLR value with <see cref="WriteJsonTree"/> (an explicit stack, no recursion, at most <see cref="MaxFinalValues"/> values) instead of the node's own recursive <c>WriteTo</c>.</summary>
     private sealed class NodeConverter<T> : JsonConverter<T> where T : JsonNode
     {
@@ -155,10 +197,15 @@ internal static class JsonRedaction
 
         public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
         {
-            var count = 0;
+            // The first walk below a leaf has a limit of its own. A walk that is re-entered (a leaf inside such a walk, and so on down)
+            // continues the count of the walk above it, within that walk's limit.
+            var above = t_reentry is { Depth: > 1 } reentered ? reentered : null;
+            var count = above?.Used ?? 0;
+            var limit = above is null ? MaxFinalValues : Math.Min(above.MaxValues, count + MaxFinalValues);
             var changed = false;
-            if (!WriteJsonTree(value, writer, null, MaxFinalValues, ref count, ref changed))
-                throw new JsonException("the JSON node has too many values");
+            if (WriteJsonTree(value, writer, null, limit, ref count, ref changed)) return;
+            if (above is not null && above.MaxValues < above.Used + MaxFinalValues) above.Exceeded = true;
+            throw new JsonException("the JSON node has too many values");
         }
     }
 
@@ -527,12 +574,27 @@ internal static class JsonRedaction
         }
         else
         {
-            using var stream = new System.IO.MemoryStream();
-            using (var own = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, MaxDepth = WalkDepth(MaxFinalValues) }))
+            // A new serializer starts here: count it, so a chain of leaves that lead back into each other ends at ClrReentryLimit.
+            var frame = new ReentryFrame(t_reentry, maxValues, count - 1);
+            if (frame.Depth > ClrReentryLimit) throw new JsonException("CLR values nest through JSON nodes too deeply");
+            t_reentry = frame;
+            try
             {
-                leaf.WriteTo(own, NodeLeafOptions.Value ?? throw new JsonException("the value cannot be serialized on this runtime"));
+                using var stream = new System.IO.MemoryStream();
+                using (var own = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, MaxDepth = WalkDepth(MaxFinalValues) }))
+                {
+                    leaf.WriteTo(own, NodeLeafOptions.Value ?? throw new JsonException("the value cannot be serialized on this runtime"));
+                }
+                text = stream.ToArray();
             }
-            text = stream.ToArray();
+            catch (JsonException) when (frame.Exceeded)
+            {
+                return false;
+            }
+            finally
+            {
+                t_reentry = frame.Parent;
+            }
         }
 
         // The value itself was counted once already.

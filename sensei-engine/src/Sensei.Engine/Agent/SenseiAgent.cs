@@ -52,7 +52,7 @@ internal sealed class SenseiAgent : IAgentRunner
             _history = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
             {
                 ChatReducer = new LearnerBoundaryReducer(),
-                ProvideOutputMessageFilter = DropBlankAssistantMessages,
+                ProvideOutputMessageFilter = DropAssistantText,
             });
             _agent = new ChatClientAgent(functions, new ChatClientAgentOptions
             {
@@ -209,9 +209,30 @@ internal sealed class SenseiAgent : IAgentRunner
         ErrorDetail = detail,
     };
 
-    /// <summary>The round limiter's empty answer (and an empty answer from a provider) is not history worth sending back.</summary>
-    private static IEnumerable<ChatMessage> DropBlankAssistantMessages(IEnumerable<ChatMessage> messages) =>
-        messages.Where(m => m.Role != ChatRole.Assistant
-                            || m.Contents.OfType<FunctionCallContent>().Any()
-                            || !string.IsNullOrWhiteSpace(m.Text));
+    /// <summary>
+    /// S129: history keeps the model's tool calls, never its plain text (that is <c>unspoken_text</c>, trace only, S67).
+    /// Every assistant <see cref="TextContent"/> is removed from a copy of its message (the stored message is not
+    /// changed), a call keeps its place and id, and an assistant message left with no content (the round limiter's
+    /// empty answer included) is dropped.
+    /// </summary>
+    private static IEnumerable<ChatMessage> DropAssistantText(IEnumerable<ChatMessage> messages)
+    {
+        foreach (var message in messages)
+        {
+            if (message.Role != ChatRole.Assistant)
+            {
+                yield return message;
+                continue;
+            }
+            if (message.Contents.Any(c => c is TextContent))
+            {
+                var kept = message.Contents.Where(c => c is not TextContent).ToList();
+                if (kept.Count == 0) continue;
+                var copy = message.Clone();
+                copy.Contents = kept;
+                yield return copy;
+            }
+            else if (message.Contents.Count > 0) yield return message;
+        }
+    }
 }
