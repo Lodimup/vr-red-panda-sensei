@@ -59,10 +59,17 @@ internal static class ExceptionSanitizer
         var name = OperationName(operation);
         try
         {
-            if (ex is SenseiEngineException already) return already;
+            // An exception instance is never trusted because of its type: a dependency can keep an earlier SenseiEngineException and
+            // attach data to it. It is re-created here from its category alone; no text of it is carried over.
             var category = FaultCategories.Of(ex);
             var message = name + " failed: " + category;
             var type = ex.GetType();
+            if (ex is SenseiEngineException already)
+            {
+                var recreated = new SenseiEngineException(Clean(already.OriginalType, secrets), message);
+                FaultCategories.Tag(recreated, category);
+                return recreated;
+            }
             var authored = Authored.TryGet(ex, out var authoredMessage, out var paramName);
             Exception? intended = null;
             if (type == typeof(InvalidOperationException)) intended = new InvalidOperationException(authored ? authoredMessage : message);
@@ -70,7 +77,8 @@ internal static class ExceptionSanitizer
             else if (type == typeof(ArgumentException)) intended = authored ? new ArgumentException(authoredMessage, paramName) : new ArgumentException(message);
             else if (ex is ProfileCorruptException)
             {
-                var id = profileId ?? "profile";
+                // The message is engine-authored (no profile id in it); the id the exception carries is sanitized.
+                var id = Clean(profileId ?? "profile", secrets);
                 intended = new ProfileCorruptException(id, id + ".json", null);
             }
             else if (type == typeof(OperationCanceledException) || type == typeof(TaskCanceledException))
@@ -80,7 +88,10 @@ internal static class ExceptionSanitizer
 
             var traced = intended is null || ex.InnerException is not null;
             if (traced) detail = TryDescribe(ex, secrets);
-            return intended ?? new SenseiEngineException(Clean(type.FullName ?? type.Name, secrets), message);
+            if (intended is not null) return intended;
+            var created = new SenseiEngineException(Clean(type.FullName ?? type.Name, secrets), message);
+            FaultCategories.Tag(created, category);
+            return created;
         }
         catch (Exception)
         {

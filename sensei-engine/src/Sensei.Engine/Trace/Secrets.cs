@@ -88,12 +88,15 @@ public static class CredentialPattern
 /// </summary>
 public sealed class Secrets
 {
+    /// <summary>S126: shorter exact values are never searched for inside other text; they would mangle ordinary words and model names.</summary>
+    public const int MinimumKnownSecretLength = 8;
+
     private readonly string[] _known;
 
     public Secrets(IEnumerable<string>? knownSecrets)
     {
         _known = (knownSecrets ?? Array.Empty<string>())
-            .Where(s => !string.IsNullOrEmpty(s))
+            .Where(s => !string.IsNullOrEmpty(s) && s.Length >= MinimumKnownSecretLength)
             .Distinct(StringComparer.Ordinal)
             .OrderByDescending(s => s.Length)
             .ToArray();

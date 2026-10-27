@@ -548,7 +548,7 @@ public sealed class StorageTests : IDisposable
     }
 
     [Fact]
-    public async Task S57_corrupt_exception_message_names_the_profile_without_the_directory()
+    public async Task S57_corrupt_exception_message_is_engine_authored_and_holds_neither_the_profile_nor_the_directory()
     {
         var store = NewStore();
         Directory.CreateDirectory(_dir);
@@ -556,7 +556,9 @@ public sealed class StorageTests : IDisposable
 
         var ex = await Assert.ThrowsAsync<ProfileCorruptException>(async () => await store.LoadAsync("alpha", default));
 
-        Assert.Contains("alpha", ex.Message);
+        // Round-four ruling (F02): no caller-supplied text in the message; the id is on ProfileId.
+        Assert.Equal(ProfileCorruptException.FixedMessage, ex.Message);
+        Assert.Equal("alpha", ex.ProfileId);
         Assert.DoesNotContain(_dir, ex.Message);
     }
 

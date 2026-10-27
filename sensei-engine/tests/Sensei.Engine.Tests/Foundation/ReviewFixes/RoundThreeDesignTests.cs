@@ -171,7 +171,8 @@ public sealed class RoundThreeDesignTests
         var corrupt = Assert.IsType<ProfileCorruptException>(error);
         Assert.Equal("default", corrupt.ProfileId);
         Assert.Equal("default.json", corrupt.FilePath);
-        Assert.Equal("profile 'default' at default.json is corrupt and was left untouched", corrupt.Message);
+        // Round-four ruling (F02): the message is engine-authored and holds no caller-supplied text, so no profile id either.
+        Assert.Equal(ProfileCorruptException.FixedMessage, corrupt.Message);
         Assert.Null(corrupt.InnerException);
         Assert.DoesNotContain(Secret, corrupt.ToString());
         var entry = Assert.Single(trace.Entries, e => e.Tool == "engine:CreateAsync");

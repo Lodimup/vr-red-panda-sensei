@@ -40,7 +40,7 @@ public sealed class SenseiEngine : IAsyncDisposable
     private SenseiEngine(EngineCore core, Func<EngineCore, IAgentRunner>? runnerFactory)
     {
         _core = core;
-        _runner = runnerFactory?.Invoke(core) ?? new SenseiAgentRunner(core);
+        _runner = runnerFactory?.Invoke(core) ?? new SenseiAgent(core);
     }
 
     /// <summary>S7: loads or creates the profile, appends this session's record and saves.</summary>
@@ -80,6 +80,19 @@ public sealed class SenseiEngine : IAsyncDisposable
             var problem = profile.ProfileId != options.ProfileId ? "profile_id" : profile.FindShapeProblem();
             if (problem is not null)
                 throw new ProfileCorruptException(options.ProfileId, options.ProfileId + ".json", new FormatException("invalid field: " + problem));
+            if (stored is null)
+            {
+                // S7: a profile that did not exist is saved as created (version 1, no sessions); the session record is appended and saved after.
+                try
+                {
+                    await options.ProfileStore.SaveAsync(LearnerBook.Clone(profile), ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    FaultCategories.Tag(ex, FaultCategories.ProfileStore);
+                    throw;
+                }
+            }
             profile.Sessions.Add(new SessionRecord { SessionId = sessionId, StartedAt = now });
 
             var core = new EngineCore(options, clock, sessionId, secrets, profile, extraTools);
@@ -385,11 +398,21 @@ public sealed class SenseiEngine : IAsyncDisposable
 
     private async Task<TurnResult> RunGatedAsync(Func<Task<Prepared>> start, CancellationToken ct)
     {
+        // S66: the caller's cancellation is a result, never an exception. A token that is already cancelled starts nothing and
+        // disturbs nothing; one that fires while this call waits for the lifecycle gate ends the wait the same way.
+        if (ct.IsCancellationRequested) return CancelledBeforeStart();
         using var scope = _core.OpenNotificationScope();
         long ticket;
         lock (_turnGate) ticket = ++_turnTicket;
         await CancelRunningTurnAsync().ConfigureAwait(false);
-        await _lifecycle.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await _lifecycle.WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return CancelledBeforeStart();
+        }
         var settled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         bool superseded;
         lock (_turnGate)
@@ -509,6 +532,14 @@ public sealed class SenseiEngine : IAsyncDisposable
         _core.CancelGeneration();
         await running.ConfigureAwait(false);
     }
+
+    /// <summary>The result of a turn that was cancelled before it started: nothing ran, so it names the state as it is.</summary>
+    private TurnResult CancelledBeforeStart() => new()
+    {
+        TurnId = _core.CurrentTurnId,
+        GenerationId = _core.CurrentGeneration,
+        Status = TurnStatuses.Cancelled,
+    };
 
     private static TurnResult Failed(TurnState turn, string code, string detail) => new()
     {

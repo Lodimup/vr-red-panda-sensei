@@ -57,7 +57,7 @@ public sealed class LlmSettings
     {
         var p = Clean(provider);
         if (p is null || Array.IndexOf(Providers.ToArrayCompat(), p) < 0)
-            throw new LlmConfigurationException($"unknown {ProviderVariable} '{Describe(p)}'; allowed values: {string.Join(", ", Providers)}");
+            throw new LlmConfigurationException($"unknown {ProviderVariable} '{Describe(p, apiKey)}'; allowed values: {string.Join(", ", Providers)}");
 
         var url = Clean(baseUrl) ?? PresetUrl(p);
         if (url is null)
@@ -131,7 +131,8 @@ public sealed class LlmSettings
     public override string ToString() =>
         $"provider={Redact(Provider)} model={Redact(Model)} base_url={Redact(BaseUrl)} reasoning_effort={Redact(ReasoningEffort)} max_output_tokens={MaxOutputTokens.ToString(CultureInfo.InvariantCulture)} api_key=[set]";
 
-    private string Redact(string text) => ApiKey.Length == 0 ? text : text.Replace(ApiKey, "[redacted]");
+    // S126: a key shorter than the minimum is not searched for inside other fields; api_key=[set] never prints it either way.
+    private string Redact(string text) => ApiKey.Length < Trace.Secrets.MinimumKnownSecretLength ? text : text.Replace(ApiKey, "[redacted]");
 
     private static string? Get(IReadOnlyDictionary<string, string?> env, string name) =>
         env.TryGetValue(name, out var value) ? value : null;
@@ -142,7 +143,15 @@ public sealed class LlmSettings
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
-    private static string Describe(string? provider) => provider ?? "";
+    /// <summary>
+    /// The rejected provider value as it may appear in the message (S77): the supplied key and anything that looks like a credential is
+    /// redacted first, then the text is cut to 40 characters, so a key typed into the wrong field never travels in an exception.
+    /// </summary>
+    private static string Describe(string? provider, string? apiKey)
+    {
+        var text = new Trace.Secrets(new[] { apiKey?.Trim() ?? "" }).Sanitize(provider ?? "") ?? "";
+        return text.Length <= 40 ? text : text.Substring(0, 40);
+    }
 
     private static string? PresetUrl(string provider) => provider switch
     {

@@ -12,8 +12,11 @@ using Sensei.Engine.World;
 namespace Sensei.Engine.Agent;
 
 /// <summary>
-/// Renders the per-turn context (S63, S76). Engine-owned facts go into the instruction text; everything the learner
-/// said or influenced (transcript, correction, notes, player actions) goes into one <c>&lt;learner_data&gt;</c> block.
+/// Renders the per-turn context (S63, S76). The instruction text holds engine-authored policy and engine-computed facts only
+/// (ids, counts, statuses, enums, budgets). Everything a learner said or influenced goes into one <c>&lt;learner_data&gt;</c> block
+/// in the user message: the transcript, correction and interruption notes, the player's actions as scene events, saved notes, and
+/// the text Sensei itself wrote earlier that can quote the learner (the active task's instruction, targets and role, and the
+/// target keys of the recommendations and the review queue).
 /// </summary>
 internal sealed class ContextRenderer
 {
@@ -32,7 +35,7 @@ internal sealed class ContextRenderer
     /// <summary>The full instruction text for one model request: the system prompt plus the current engine-owned state.</summary>
     public string RenderInstructions(TurnScope scope) => SystemPrompt.Text + "\n\n" + RenderState(scope);
 
-    /// <summary>S63: the engine-owned state — band, working level, support, pins, recommendations, review, scene, task, budgets.</summary>
+    /// <summary>S63: the engine-owned state — band, working level, support, pins, counts, scene, budgets. No text a model or learner wrote.</summary>
     public string RenderState(TurnScope scope)
     {
         string snapshotJson;
@@ -41,34 +44,37 @@ internal sealed class ContextRenderer
         string? selfReported;
         string supportLine;
         string pinned;
-        string recommendations;
-        string reviewDue;
+        string activeTask;
+        int recommendationCount;
+        int reviewDueCount;
         string languageMode;
         int callsLeft;
-        int turnId;
         lock (_core.Sync)
         {
             var profile = _core.Learner.Profile;
-            snapshotJson = CompactSnapshot(_core.World.Snapshot());
+            var snapshot = _core.World.Snapshot();
+            var task = snapshot.ActiveTask;
+            snapshot.ActiveTask = null;
+            snapshotJson = CompactSnapshot(snapshot);
+            activeTask = task is null ? "none" : $"{task.TaskId} (family {task.Family}, status {task.Status}); its text and targets are in the {SystemPrompt.LearnerDataTag} block";
             band = profile.StartingBand ?? "not chosen yet";
             workingLevel = profile.WorkingLevel;
             selfReported = profile.SelfReportedJlpt;
             languageMode = profile.Support.LanguageMode;
             supportLine = string.Join(", ", SupportFields.All.Where(f => f != "language_mode").Select(f => f + "=" + profile.Support.GetFieldValue(f)));
             pinned = profile.Pinned.Count == 0 ? "none" : string.Join(", ", profile.Pinned);
-            var recs = EvidenceRules.ComputeRecommendations(profile.Evidence);
-            recommendations = recs.Count == 0 ? "none" : string.Join(", ", recs.Select(r => $"{r.Key} ({r.Dimension}): {r.Kind}"));
-            var due = EvidenceRules.ComputeReviewDue(profile.Evidence, _core.SessionId);
-            reviewDue = due.Count == 0 ? "none" : string.Join(", ", due);
+            recommendationCount = EvidenceRules.ComputeRecommendations(profile.Evidence).Count;
+            reviewDueCount = EvidenceRules.ComputeReviewDue(profile.Evidence, _core.SessionId).Count;
             callsLeft = scope.Turn.RemainingCalls;
-            turnId = (int)scope.Turn.TurnId;
         }
 
         var round = scope.Rounds == 0 ? 1 : scope.Rounds;
+        var roundsLeft = System.Math.Max(0, MaxRounds - round);
         var containsJapanese = Sensei.Engine.Text.TextRules.ContainsJapanese(scope.Request.Transcript);
         var sb = new StringBuilder();
         sb.AppendLine("## Current state (engine-owned, refreshed before every model request)");
-        sb.AppendLine($"- turn {turnId.ToString(CultureInfo.InvariantCulture)}: model round {round.ToString(CultureInfo.InvariantCulture)} of {MaxRounds.ToString(CultureInfo.InvariantCulture)}; {(MaxRounds - round).ToString(CultureInfo.InvariantCulture)} more model requests allowed after this one; {callsLeft.ToString(CultureInfo.InvariantCulture)} tool calls left this turn.");
+        sb.AppendLine($"- tool calls remaining this turn: {callsLeft.ToString(CultureInfo.InvariantCulture)}");
+        sb.AppendLine($"- model rounds remaining after this request: {roundsLeft.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine(round == 1
             ? "- this is the first request of the turn: `speak` first, then every call you can already make, all in this one response."
             : "- the results of your earlier calls are in the conversation above. Make only the calls that still depend on them; if none do, finish now with no tool calls and no text. Do not repeat anything you already said this turn.");
@@ -78,18 +84,19 @@ internal sealed class ContextRenderer
         if (selfReported is not null) sb.AppendLine($"- the learner reported their own level as: {selfReported}");
         sb.AppendLine($"- support settings: language mode: {languageMode}, {supportLine}");
         sb.AppendLine($"- pinned by the learner (never change): {pinned}");
-        sb.AppendLine($"- recommendations: {recommendations}");
-        sb.AppendLine($"- review due: {reviewDue}");
-        sb.AppendLine($"- scene snapshot (revision, selected object, instances, active task): {snapshotJson}");
+        sb.AppendLine($"- recommendations: {recommendationCount.ToString(CultureInfo.InvariantCulture)} (the targets are in the {SystemPrompt.LearnerDataTag} block)");
+        sb.AppendLine($"- review due: {reviewDueCount.ToString(CultureInfo.InvariantCulture)} (the targets are in the {SystemPrompt.LearnerDataTag} block)");
+        sb.AppendLine($"- active task: {activeTask}");
+        sb.AppendLine($"- scene snapshot (revision, selected object, instances): {snapshotJson}");
         return sb.ToString().TrimEnd();
     }
 
     /// <summary>
-    /// S76: the user message of the turn — one delimited block holding the transcript, the correction note, the
-    /// interruption note, the learner's actions since the previous turn and (when <paramref name="includeNotes"/>) the saved notes.
-    /// The persisted copy leaves the notes out so history does not repeat them every turn.
+    /// S76: the user message of the turn — one delimited block holding the transcript, the correction note, the interruption
+    /// note, the player's events since the previous turn and, when <paramref name="includeCurrent"/>, the saved notes and the
+    /// current task and target text. The persisted copy leaves those out so history does not repeat them every turn.
     /// </summary>
-    public string RenderLearnerMessage(TurnScope scope, bool includeNotes)
+    public string RenderLearnerMessage(TurnScope scope, bool includeCurrent)
     {
         var request = scope.Request;
         var lines = new List<string>();
@@ -108,19 +115,31 @@ internal sealed class ContextRenderer
 
         List<string> events;
         Dictionary<string, string>? notes = null;
+        string? task = null;
+        List<string>? recommendations = null;
+        List<string>? reviewDue = null;
         lock (_core.Sync)
         {
             events = _core.World.EventsAfter(scope.PlayerEventMark)
-                .Where(e => e.Actor == SceneActors.Player && (e.Kind == SceneEventKinds.Moved || e.Kind == SceneEventKinds.Selected || e.Kind == SceneEventKinds.TaskCompleted))
-                .Select(DescribeEvent)
+                .Where(e => e.Actor == SceneActors.Player)
+                .Select(e => JsonSerializer.Serialize(e, SenseiJsonContext.Default.SceneEvent))
                 .ToList();
-            if (includeNotes) notes = new Dictionary<string, string>(_core.Learner.Profile.Notes);
-            if (includeNotes) scope.ShownEventsUpTo = _core.World.LastEventId;
+            if (includeCurrent)
+            {
+                var profile = _core.Learner.Profile;
+                notes = new Dictionary<string, string>(profile.Notes);
+                if (_core.Tasks.Active is { } active) task = CompactTask(active);
+                recommendations = EvidenceRules.ComputeRecommendations(profile.Evidence)
+                    .Select(r => $"{{\"key\":{Quote(r.Key)},\"dimension\":{Quote(r.Dimension)},\"kind\":{Quote(r.Kind)}}}").ToList();
+                reviewDue = EvidenceRules.ComputeReviewDue(profile.Evidence, _core.SessionId)
+                    .Select(d => $"{{\"key\":{Quote(d.Key)},\"dimension\":{Quote(d.Dimension)}}}").ToList();
+                scope.ShownEventsUpTo = _core.World.LastEventId;
+            }
         }
         if (events.Count > 0)
         {
-            lines.Add("learner_actions_since_previous_turn:");
-            lines.AddRange(events.Select(e => "- " + e));
+            lines.Add("player_events_since_previous_turn (scene events whose actor is the player):");
+            lines.AddRange(events.Select(e => Safe(e)));
         }
         if (notes is { Count: > 0 })
         {
@@ -128,6 +147,9 @@ internal sealed class ContextRenderer
             foreach (var kv in notes.OrderBy(k => k.Key, System.StringComparer.Ordinal))
                 lines.Add($"- {Safe(kv.Key)}: {Safe(kv.Value)}");
         }
+        if (task is not null) lines.Add("active_task (written by Sensei earlier, may quote the learner): " + Safe(task));
+        if (recommendations is { Count: > 0 }) lines.Add("recommendations (targets named by Sensei earlier): [" + Safe(string.Join(",", recommendations)) + "]");
+        if (reviewDue is { Count: > 0 }) lines.Add("review_due (targets named by Sensei earlier): [" + Safe(string.Join(",", reviewDue)) + "]");
 
         var sb = new StringBuilder();
         sb.Append('<').Append(SystemPrompt.LearnerDataTag).Append(">\n");
@@ -140,8 +162,8 @@ internal sealed class ContextRenderer
 
     /// <summary>
     /// The scene snapshot as the model needs it each request: what the catalog table in the prompt and the support line
-    /// above already say is left out (the Japanese, reading and English of each instance, the support settings, the
-    /// task's bookkeeping ids and assistance baseline). The full snapshot is still what <c>inspect_scene</c> returns (S20).
+    /// above already say is left out (the Japanese, reading and English of each instance, the support settings). The full
+    /// snapshot is still what <c>inspect_scene</c> returns (S20).
     /// </summary>
     internal static string CompactSnapshot(SceneSnapshot snapshot)
     {
@@ -154,25 +176,19 @@ internal sealed class ContextRenderer
                 instance.Remove("reading");
                 instance.Remove("english");
             }
-        if (node["active_task"] is JsonObject task)
-            foreach (var key in new[] { "assistance_baseline", "source_revision", "start_event_id", "predicates_since_event_id" })
-                task.Remove(key);
         return node.ToJsonString();
     }
 
-    private static string DescribeEvent(SceneEvent e)
+    /// <summary>The active task without its bookkeeping (assistance baseline, start and revision ids).</summary>
+    internal static string CompactTask(Sensei.Engine.Tasks.TaskView task)
     {
-        var ids = string.Join(", ", e.InstanceIds);
-        switch (e.Kind)
-        {
-            case SceneEventKinds.Moved:
-                return $"moved {ids} from {e.From ?? "?"} to {e.To ?? "?"}";
-            case SceneEventKinds.Selected:
-                return $"selected {ids}";
-            default:
-                return $"completed the active task {e.TaskId ?? ""}".TrimEnd();
-        }
+        var node = JsonSerializer.SerializeToNode(task, SenseiJsonContext.Default.TaskView)!.AsObject();
+        foreach (var key in new[] { "assistance_baseline", "source_revision", "start_event_id", "predicates_since_event_id" })
+            node.Remove(key);
+        return node.ToJsonString();
     }
+
+    private static string Quote(string text) => JsonSerializer.Serialize(text, SenseiJsonContext.Default.String);
 
     /// <summary>Keeps the learner's text from closing or reopening the data block.</summary>
     internal static string Neutralize(string text) => TagBreakout.Replace(text, "&lt;$1$2");

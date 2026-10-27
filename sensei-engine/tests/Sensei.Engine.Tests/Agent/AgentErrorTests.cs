@@ -230,7 +230,7 @@ public sealed class AgentErrorTests
     [Fact]
     public void S67_detail_is_one_short_line()
     {
-        var (_, detail) = ProviderErrors.Map(new InvalidOperationException("line one\nline two " + new string('x', 1000)));
+        var (_, detail) = ProviderErrors.Map(new InvalidOperationException("line one\nline two " + new string('x', 1000)), Sensei.Engine.Trace.Secrets.None);
         Assert.DoesNotContain('\n', detail);
         Assert.True(detail.Length <= 300);
     }
