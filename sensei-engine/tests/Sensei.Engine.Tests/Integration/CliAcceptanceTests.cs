@@ -105,3 +105,73 @@ public sealed class CliAcceptanceTests
         Assert.DoesNotContain("Unhandled exception", run.Stderr);
     }
 }
+
+/// <summary>S109: interactive mode keeps answering while a turn waits on the provider.</summary>
+public sealed class CliInteractiveAcceptanceTests
+{
+    private const string SpawnCup = "/tool spawn_objects {\"objects\":[{\"catalog_id\":\"cup\"}]}";
+
+    private static FuncChatClient BlockedProvider() => new(async (_, _, ct) =>
+    {
+        await Task.Delay(Timeout.Infinite, ct);
+        return new Microsoft.Extensions.AI.ChatResponse(new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "never"));
+    });
+
+    [Theory]
+    [InlineData("/select cup_1")]
+    [InlineData("/move cup_1 left")]
+    public async Task S109_interactive_select_and_move_act_before_the_old_response(string command)
+    {
+        var lines = new[] { SpawnCup, "hello", command, "/tool inspect_scene {}", "/quit" };
+        var run = await InteractiveAsync(new StringReader(string.Join("\n", lines) + "\n"), BlockedProvider());
+
+        var all = run.Lines.ToList();
+        var interrupted = all.FindIndex(l => l.StartsWith("Sensei: interrupted", StringComparison.Ordinal));
+        var dataIndex = all.FindIndex(l => l.StartsWith('{'));
+        Assert.True(dataIndex >= 0, run.Text);
+        Assert.True(interrupted > dataIndex, run.Text);
+        var scene = JsonDocument.Parse(all[dataIndex]).RootElement;
+        if (command.StartsWith("/select", StringComparison.Ordinal)) Assert.Equal("cup_1", scene.GetProperty("selected_id").GetString());
+        else Assert.Equal("left", scene.GetProperty("instances")[0].GetProperty("region").GetString());
+        Assert.DoesNotContain(all, l => l.Contains("turn_in_progress"));
+    }
+
+    [Fact]
+    public async Task S109_a_tool_call_during_a_running_turn_does_not_cancel_it()
+    {
+        var lines = new[] { SpawnCup, "hello", "/tool inspect_scene {}" };
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new FuncChatClient(async (_, _, ct) =>
+        {
+            await gate.Task.WaitAsync(ct);
+            return new Microsoft.Extensions.AI.ChatResponse(new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "ok"));
+        });
+        var reader = new GatedReader(lines, () => gate.TrySetResult());
+
+        var run = await InteractiveAsync(reader, provider);
+
+        Assert.Contains(run.ResultLines, l => l.Contains("turn 2: completed"));
+    }
+
+    /// <summary>Hands out its lines one by one; after the last it runs <paramref name="atEnd"/> and reports end of input.</summary>
+    private sealed class GatedReader : TextReader
+    {
+        private readonly Queue<string> _lines;
+        private readonly Action _atEnd;
+
+        public GatedReader(IEnumerable<string> lines, Action atEnd)
+        {
+            _lines = new Queue<string>(lines);
+            _atEnd = atEnd;
+        }
+
+        public override string? ReadLine()
+        {
+            if (_lines.Count > 0) return _lines.Dequeue();
+            _atEnd();
+            return null;
+        }
+
+        public override ValueTask<string?> ReadLineAsync(CancellationToken cancellationToken) => new(ReadLine());
+    }
+}

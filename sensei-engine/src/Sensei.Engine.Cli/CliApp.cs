@@ -437,7 +437,9 @@ internal sealed class CliApp
             return;
         }
 
-        if (!_manualTurnOpen)
+        // S109: input is read while a turn runs. A turn that is running is the current turn, so the call runs inside it (it does not
+        // cancel it and does not try to start a second one, which S87 forbids); with no turn running, the first /tool opens a manual turn.
+        if (!_manualTurnOpen && Volatile.Read(ref _runningCount) == 0)
         {
             try
             {

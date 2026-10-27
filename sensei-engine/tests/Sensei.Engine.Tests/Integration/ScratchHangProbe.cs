@@ -169,3 +169,119 @@ public class ScratchReflect
         foreach (var x in asm.GetTypes().Where(x => x.Name.Contains("Agent") || x.Name.Contains("Context"))) _out.WriteLine(x.FullName + " : " + x.BaseType);
     }
 }
+
+public class ScratchExcerpt
+{
+    private readonly ITestOutputHelper _out;
+    public ScratchExcerpt(ITestOutputHelper o) { _out = o; }
+
+    private const string Rec = "{\"target\":{\"dimension\":\"vocabulary\",\"key\":\"cup\"},\"transcript_excerpt\":\"コップをください\",\"communicative_success\":true,\"language_assessment\":\"correct\"}";
+
+    [Fact]
+    public async Task Flows()
+    {
+        // 1 BeginTurn
+        await using (var t = await TestEngine.CreateAsync())
+        {
+            t.Engine.BeginTurn("コップをください");
+            var r = await t.Engine.InvokeToolAsync("record_attempt", Rec);
+            _out.WriteLine("begin: " + r.Status + " " + r.ErrorCode + " " + r.Detail);
+        }
+        // 2 RunTurnAsync without a client
+        await using (var t = await TestEngine.CreateAsync())
+        {
+            var turn = await t.Engine.RunTurnAsync("コップをください");
+            var r = await t.Engine.InvokeToolAsync("record_attempt", Rec);
+            _out.WriteLine("run-null: " + turn.Status + " " + turn.ErrorCode + " / " + r.Status + " " + r.ErrorCode + " " + r.Detail);
+        }
+        // 3 RunTurnAsync with scripted client, tools after
+        {
+            var chat = new Sensei.Engine.Tests.TestKit.ScriptedChatClient().EnqueueText("ok");
+            await using var t = await TestEngine.CreateAsync(chat: chat);
+            var turn = await t.Engine.RunTurnAsync("コップをください");
+            var r = await t.Engine.InvokeToolAsync("record_attempt", Rec);
+            _out.WriteLine("run-chat: " + turn.Status + " / " + r.Status + " " + r.ErrorCode + " " + r.Detail);
+        }
+        // 4 two turns
+        await using (var t = await TestEngine.CreateAsync())
+        {
+            t.Engine.BeginTurn("コップをください");
+            t.Engine.BeginTurn("second");
+            var r = await t.Engine.InvokeToolAsync("record_attempt", Rec);
+            _out.WriteLine("prev-turn: " + r.Status + " " + r.ErrorCode + " " + r.Detail);
+        }
+        // 5 after player actions, spawn
+        await using (var t = await TestEngine.CreateAsync())
+        {
+            t.Engine.BeginTurn("コップをください");
+            var s = await t.Engine.InvokeToolAsync("spawn_objects", "{\"objects\":[{\"catalog_id\":\"cup\"}]}");
+            t.Engine.PlayerMove("cup_1", "left", null);
+            var s2 = await t.Engine.InvokeToolAsync("spawn_objects", "{\"objects\":[{\"catalog_id\":\"apple\"}]}");
+            _out.WriteLine("stale-after-player: " + s2.Status + " " + s2.ErrorCode);
+            t.Engine.MarkRoundStart();
+            var s3 = await t.Engine.InvokeToolAsync("spawn_objects", "{\"objects\":[{\"catalog_id\":\"apple\"}]}");
+            _out.WriteLine("after MarkRoundStart: " + s3.Status + " " + s3.ErrorCode);
+        }
+    }
+}
+
+public class ScratchAgentFlow
+{
+    private readonly ITestOutputHelper _out;
+    public ScratchAgentFlow(ITestOutputHelper o) { _out = o; }
+
+    private const string Rec = "{\"target\":{\"dimension\":\"vocabulary\",\"key\":\"cup\"},\"transcript_excerpt\":\"コップをください\",\"communicative_success\":true,\"language_assessment\":\"correct\"}";
+    private const string Start = "{\"family\":\"discover_request\",\"instruction\":{\"english\":\"x\"},\"skill_targets\":[{\"dimension\":\"vocabulary\",\"key\":\"cup\"}],\"predicates\":[{\"type\":\"in_region\",\"object_id\":\"cup_1\",\"region\":\"left\"}]}";
+
+    [Fact]
+    public async Task Agent_flow_with_empty_call_ids()
+    {
+        var chat = new Sensei.Engine.Tests.TestKit.ScriptedChatClient()
+            .EnqueueFunctionCalls(("", "spawn_objects", "{\"objects\":[{\"catalog_id\":\"cup\"}]}"))
+            .EnqueueFunctionCalls(("", "start_challenge", Start))
+            .EnqueueFunctionCalls(("", "update_challenge", "{\"task_id\":\"t1\",\"action\":\"abandon\",\"reason\":\"x\"}"), ("", "record_attempt", Rec))
+            .EnqueueText("done");
+        await using var t = await TestEngine.CreateAsync(chat: chat);
+        var r = await t.Engine.RunTurnAsync("コップをください");
+        _out.WriteLine(r.Status + " rounds=" + r.Rounds);
+        foreach (var c in r.ToolCalls) _out.WriteLine($"{c.CallId} {c.Tool} {c.Status} {c.ErrorCode} {c.Result?.Detail}");
+    }
+}
+
+public class ScratchEventFuzz
+{
+    private readonly ITestOutputHelper _out;
+    public ScratchEventFuzz(ITestOutputHelper o) { _out = o; }
+
+    [Fact]
+    public async Task Callbacks_match_world_events()
+    {
+        var rnd = new Random(7);
+        for (var run = 0; run < 50; run++)
+        {
+            var ev = new RecordingEvents();
+            await using var t = await TestEngine.CreateAsync(events: ev);
+            t.Engine.BeginTurn("hello");
+            await t.Engine.InvokeToolAsync("spawn_objects", "{\"objects\":[{\"catalog_id\":\"cup\"},{\"catalog_id\":\"box\"},{\"catalog_id\":\"apple\"}]}");
+            t.Engine.MarkRoundStart();
+            for (var i = 0; i < 25; i++)
+            {
+                switch (rnd.Next(9))
+                {
+                    case 0: t.Engine.PlayerSelect(new[] { "cup_1", "box_1", "apple_1", "nope" }[rnd.Next(4)]); break;
+                    case 1: t.Engine.PlayerMove(new[] { "cup_1", "box_1", "apple_1" }[rnd.Next(3)], new[] { "left", "center", "right" }[rnd.Next(3)], null); break;
+                    case 2: t.Engine.PlayerMove("cup_1", null, "box_1"); break;
+                    case 3: await t.Engine.InvokeToolAsync("move_object", "{\"object_id\":\"apple_1\",\"destination\":{\"region\":\"" + new[] { "left", "center", "right" }[rnd.Next(3)] + "\"},\"purpose\":\"arrange\"}"); break;
+                    case 4: await t.Engine.InvokeToolAsync("start_challenge", "{\"family\":\"discover_request\",\"instruction\":{\"english\":\"x\"},\"skill_targets\":[{\"dimension\":\"vocabulary\",\"key\":\"cup\"}],\"predicates\":[{\"type\":\"in_region\",\"object_id\":\"apple_1\",\"region\":\"" + new[] { "left", "center", "right" }[rnd.Next(3)] + "\"}]}"); break;
+                    case 5: await t.Engine.InvokeToolAsync("update_challenge", "{\"task_id\":\"t" + (1 + rnd.Next(3)) + "\",\"action\":\"abandon\",\"reason\":\"x\"}"); break;
+                    case 6: t.Engine.MarkRoundStart(); break;
+                    case 7: await t.Engine.InvokeToolAsync("end_activity", "{\"next_suggestion\":\"more\"}"); t.Engine.BeginTurn("again"); break;
+                    default: await t.Engine.InvokeToolAsync("remove_objects", "{\"object_ids\":[\"apple_1\"]}"); break;
+                }
+            }
+            var cb = ev.SceneEvents.Select(e => e.EventId).ToList();
+            var world = t.Core.World.Events.Select(e => e.EventId).ToList();
+            if (!cb.SequenceEqual(world)) { _out.WriteLine($"run {run}: callbacks {string.Join(",", cb)} vs world {string.Join(",", world)}"); }
+        }
+    }
+}
