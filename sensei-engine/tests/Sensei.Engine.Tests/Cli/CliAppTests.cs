@@ -13,6 +13,8 @@ public sealed class CliAppTests
 {
     private const string ResultPattern = @"^Sensei: [a-z ]+ \(turn (\d+): (\w+), (\d+) rounds, (\d+) tools, (\d+) ms\)$";
 
+    private const string SceneColumnHeader = "id | catalog | region | slot | in | japanese | reading | english";
+
     private const string SpeakJson = """{"segments":[{"lang":"ja","text":"水をください"},{"lang":"en","text":"Water, please."}]}""";
 
     private static string Spawn(params string[] catalogIds) =>
@@ -195,8 +197,11 @@ public sealed class CliAppTests
     public async Task S71_an_empty_room_is_said_to_be_empty()
     {
         var run = await ScriptAsync(new[] { "/scene" });
-        Assert.Contains("Scene rev 0, selected: none", run.Lines);
-        Assert.Contains("(the room is empty)", run.Lines);
+        // S128: the header line is still printed and is followed by the empty-room line.
+        var at = run.Lines.ToList().IndexOf("Scene rev 0, selected: none");
+        Assert.True(at >= 0);
+        Assert.Equal(SceneColumnHeader, run.Lines[at + 1]);
+        Assert.Equal("(the room is empty)", run.Lines[at + 2]);
     }
 
     [Fact]
@@ -270,7 +275,10 @@ public sealed class CliAppTests
         var run = await ScriptAsync(new[] { Spawn("apple"), "/band advanced", "/reset", "/scene", "/profile" });
 
         Assert.Contains("profile reset", run.Lines);
-        Assert.Contains("(the room is empty)", run.Lines);
+        var at = run.Lines.ToList().FindIndex(l => l.StartsWith("Scene rev ", StringComparison.Ordinal) && l.EndsWith("selected: none", StringComparison.Ordinal));
+        Assert.True(at >= 0);
+        Assert.Equal(SceneColumnHeader, run.Lines[at + 1]);
+        Assert.Equal("(the room is empty)", run.Lines[at + 2]);
         Assert.Contains("starting band: not chosen", run.Lines);
     }
 
