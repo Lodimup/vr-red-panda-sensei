@@ -23,9 +23,10 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
     private readonly IList<AITool> _dynamicTools;
     private readonly HashSet<string> _offered;
     private readonly Action<TurnScope, string> _raiseState;
+    private readonly bool _resultsAsText;
 
     public RoundLimitingChatClient(IChatClient inner, EngineCore core, ContextRenderer renderer, Func<TurnScope?> active,
-        IList<AITool> dynamicTools, IEnumerable<string> offeredToolNames, Action<TurnScope, string> raiseState)
+        IList<AITool> dynamicTools, IEnumerable<string> offeredToolNames, Action<TurnScope, string> raiseState, bool resultsAsText = false)
         : base(inner)
     {
         _core = core;
@@ -34,6 +35,7 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         _dynamicTools = dynamicTools;
         _offered = new HashSet<string>(offeredToolNames, StringComparer.Ordinal);
         _raiseState = raiseState;
+        _resultsAsText = resultsAsText;
     }
 
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
@@ -83,7 +85,7 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         // S77, S130: the copy that leaves the engine holds only text, function calls and function results, all sanitized; the stored
         // history is not touched. What the allow-list took out is traced by type name.
         var notes = new List<string>();
-        var list = OutboundMessages.Sanitized(messages, _core.Secrets, notes);
+        var list = OutboundMessages.Sanitized(messages, _core.Secrets, notes, _resultsAsText);
         _core.TraceOutboundContent(notes);
         var prepared = options?.Clone() ?? new ChatOptions();
         prepared.Instructions = _core.Secrets.Sanitize(_renderer.RenderInstructions(scope));

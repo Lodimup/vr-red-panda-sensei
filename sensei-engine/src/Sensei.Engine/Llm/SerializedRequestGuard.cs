@@ -163,14 +163,15 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
     /// The JSON text of a loosely typed value, written without recursion. Strings, numbers, booleans, JSON elements and nodes are
     /// written as they are; a dictionary with string keys is an object; any other sequence is an array; anything else is written by the
     /// serializer under its runtime type (see <see cref="JsonRedaction.ClrNestingLimit"/>). More than <paramref name="limit"/> values (a cycle included) or a value that cannot
-    /// be written is <see cref="OutboundRejectedException"/>.
+    /// be written is <see cref="OutboundRejectedException"/>. <paramref name="indented"/> and <paramref name="maxDepth"/> let a caller that
+    /// has to hand text to the SDK adapter reproduce the adapter's own layout and depth.
     /// </summary>
-    private static byte[] WriteJson(object? root, int limit)
+    internal static byte[] WriteJson(object? root, int limit, bool indented = false, int? maxDepth = null)
     {
         try
         {
             using var stream = new System.IO.MemoryStream();
-            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, MaxDepth = OutboundGuard.MaxValues + 1 }))
+            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = indented, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, MaxDepth = maxDepth ?? OutboundGuard.MaxValues + 1 }))
             {
                 var count = 0;
                 var open = new Stack<(IEnumerator Items, bool IsObject)>();
@@ -240,8 +241,7 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
             case string text:
                 writer.WriteStringValue(text);
                 break;
-            case bool flag:
-                writer.WriteBooleanValue(flag);
+            case var scalar when JsonRedaction.WriteScalar(writer, scalar):
                 break;
             case IDictionary<string, object?> map:
                 writer.WriteStartObject();

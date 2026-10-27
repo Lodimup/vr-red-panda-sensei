@@ -163,13 +163,37 @@ internal static class JsonRedaction
     }
 
     /// <summary>A boolean or a finite number: the only CLR values that need no serializer (anything else can hold text, a getter that throws, or a nesting).</summary>
-    private static bool IsScalar(object? value) => value switch
+    internal static bool IsScalar(object? value) => value switch
     {
         bool or sbyte or byte or short or ushort or int or uint or long or ulong or decimal => true,
         float single => !float.IsNaN(single) && !float.IsInfinity(single),
         double number => !double.IsNaN(number) && !double.IsInfinity(number),
         _ => false,
     };
+
+    /// <summary>
+    /// Writes a boolean or a finite number (<see cref="IsScalar"/>) as the serializer would, by the writer's own typed method, so an
+    /// indenting writer lays it out like any other value (a raw value would not be indented); false for anything else.
+    /// </summary>
+    internal static bool WriteScalar(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case bool flag: writer.WriteBooleanValue(flag); return true;
+            case sbyte number: writer.WriteNumberValue(number); return true;
+            case byte number: writer.WriteNumberValue(number); return true;
+            case short number: writer.WriteNumberValue(number); return true;
+            case ushort number: writer.WriteNumberValue(number); return true;
+            case int number: writer.WriteNumberValue(number); return true;
+            case uint number: writer.WriteNumberValue(number); return true;
+            case long number: writer.WriteNumberValue(number); return true;
+            case ulong number: writer.WriteNumberValue(number); return true;
+            case decimal number: writer.WriteNumberValue(number); return true;
+            case float number when IsScalar(value): writer.WriteNumberValue(number); return true;
+            case double number when IsScalar(value): writer.WriteNumberValue(number); return true;
+            default: return false;
+        }
+    }
 
     /// <summary>
     /// The JSON of a value of any type, serialized under its runtime type into a writer of its own (so the serializer's nesting count starts
@@ -457,7 +481,9 @@ internal static class JsonRedaction
                 WriteTreeString(element.GetString() ?? "", writer, clean, false, ref changed);
                 break;
             case JsonValueKind.Number:
-                writer.WriteRawValue(element.GetRawText());
+                // A raw value is written without the writer's indentation; an element writes its own number, spelling kept, formatted.
+                if (writer.Options.Indented) element.WriteTo(writer);
+                else writer.WriteRawValue(element.GetRawText());
                 break;
             case JsonValueKind.True:
                 writer.WriteBooleanValue(true);

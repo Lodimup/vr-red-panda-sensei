@@ -39,7 +39,7 @@ internal sealed class SenseiAgent : IAgentRunner
         {
             var dynamicTools = new List<AITool>();
             var offered = core.Tools.Standard;
-            var limiter = new RoundLimitingChatClient(Guarded(provider, core), core, _renderer, () => _active, dynamicTools, offered.Select(t => t.Name), RaiseState);
+            var limiter = new RoundLimitingChatClient(Guarded(provider, core, out var onWire), core, _renderer, () => _active, dynamicTools, offered.Select(t => t.Name), RaiseState, onWire);
             var persisted = new ChatClientBuilder(limiter).UsePerServiceCallChatHistoryPersistence().Build();
             var invoker = new EngineFunctionInvoker(core, () => _active, RaiseState);
             var functions = new FunctionInvokingChatClient(persisted)
@@ -74,9 +74,10 @@ internal sealed class SenseiAgent : IAgentRunner
     /// <summary>
     /// D6: the client the round limiter talks to. A client built by <see cref="ChatClientFactory"/> already ends in the byte guard of its
     /// request pipeline (it is found through <c>GetService</c>, also through wrappers that forward it); the engine only tells that guard
-    /// which secrets it knows. Any other client gets the serialized-request guard.
+    /// which secrets it knows, and every function result goes to it as JSON text (<paramref name="onWire"/>). Any other client gets the
+    /// serialized-request guard and the results as they are.
     /// </summary>
-    private static IChatClient Guarded(IChatClient provider, EngineCore core)
+    private static IChatClient Guarded(IChatClient provider, EngineCore core, out bool onWire)
     {
         OutboundGuard? guard = null;
         try
@@ -87,6 +88,7 @@ internal sealed class SenseiAgent : IAgentRunner
         {
             // A client that cannot be asked is a client without a guard.
         }
+        onWire = guard is not null;
         if (guard is null) return new SerializedRequestGuard(provider, core.Secrets);
         guard.Attach(core.Secrets);
         return provider;
