@@ -1,50 +1,12 @@
 using System;
 using System.IO;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
 using Sensei.Engine.Learner;
 
 namespace Sensei.Engine.Storage;
-
-/// <summary>Learner profile persistence port (SPEC §10).</summary>
-public interface IProfileStore
-{
-    Task<LearnerProfile?> LoadAsync(string profileId, CancellationToken ct);
-    Task SaveAsync(LearnerProfile profile, CancellationToken ct);
-    Task DeleteAsync(string profileId, CancellationToken ct);
-}
-
-/// <summary>A stored profile that cannot be read (S57). The file is never silently replaced.</summary>
-public sealed class ProfileCorruptException : Exception
-{
-    public ProfileCorruptException(string profileId, string path, Exception? inner)
-        : base($"profile '{profileId}' at {Path.GetFileName(path)} is corrupt and was left untouched", inner)
-    {
-        ProfileId = profileId;
-        FilePath = path;
-    }
-
-    public string ProfileId { get; }
-    public string FilePath { get; }
-}
-
-/// <summary>Profile ids (S57): <c>^[a-z0-9_-]{1,40}$</c>.</summary>
-public static class ProfileIds
-{
-    private static readonly Regex Pattern = new(@"^[a-z0-9_-]{1,40}\z", RegexOptions.CultureInvariant);
-
-    public static bool IsValid(string? profileId) => profileId is not null && Pattern.IsMatch(profileId);
-
-    /// <summary>Throws <see cref="ArgumentException"/> for an invalid id.</summary>
-    public static void Validate(string? profileId, string paramName = "profileId")
-    {
-        if (!IsValid(profileId))
-            throw new ArgumentException("profile id must match ^[a-z0-9_-]{1,40}$", paramName);
-    }
-}
 
 /// <summary>
 /// Stores <c>&lt;directory&gt;/&lt;profileId&gt;.json</c> through the source-generated context, writing a temp file and

@@ -263,7 +263,7 @@ public sealed class SourceTreeTests
     public void S3_serializer_call_scan_sees_the_known_calls_in_storage_and_json_copy()
     {
         var files = SourceFiles().ToDictionary(f => Rel(f.Path).Replace('\\', '/'), f => f.Text);
-        Assert.True(InspectSerializerCalls(files["Storage/ProfileStorage.cs"].ToString()).Calls >= 2);
+        Assert.True(InspectSerializerCalls(files["Storage/FileProfileStore.cs"].ToString()).Calls >= 2);
         Assert.True(InspectSerializerCalls(files["Json/JsonCopy.cs"].ToString()).Calls >= 2);
     }
 
