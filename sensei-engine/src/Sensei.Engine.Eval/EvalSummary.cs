@@ -29,6 +29,18 @@ internal sealed class EvalSummary
     public double MeanRounds { get; set; }
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
+    public long? ReasoningTokens { get; set; }
+    public long InputTokensMedianPerRequest { get; set; }
+    public long InputTokensMaxPerRequest { get; set; }
+
+    /// <summary>Total USD of the run: the provider-reported usage.cost when every turn has it, else the list-price estimate.</summary>
+    public double? TotalCostUsd { get; set; }
+
+    public double? MeanTurnCostUsd { get; set; }
+
+    /// <summary><c>provider_usage_cost</c> or <c>list_price_estimate</c>.</summary>
+    public string CostSource { get; set; } = "unknown";
+
     public string PercentileMethod { get; set; } = "nearest_rank";
     public List<Target> Targets { get; set; } = new();
     public bool AllMeasuredTargetsPass { get; set; }
@@ -61,6 +73,21 @@ internal sealed class EvalSummary
             InputTokens = turns.Sum(t => t.InputTokens),
             OutputTokens = turns.Sum(t => t.OutputTokens),
         };
+        var inputs = turns.SelectMany(t => t.ModelRequests).Select(r => r.InputTokens ?? 0).OrderBy(x => x).ToList();
+        s.InputTokensMedianPerRequest = inputs.Count == 0 ? 0 : Median(inputs);
+        s.InputTokensMaxPerRequest = inputs.Count == 0 ? 0 : inputs[^1];
+        s.ReasoningTokens = turns.Any(t => t.ReasoningTokens is not null) ? turns.Sum(t => t.ReasoningTokens ?? 0) : null;
+        if (turns.Count > 0 && turns.All(t => t.CostUsd is not null))
+        {
+            s.TotalCostUsd = turns.Sum(t => t.CostUsd!.Value);
+            s.CostSource = "provider_usage_cost";
+        }
+        else if (turns.Count > 0 && turns.All(t => t.EstimatedCostUsd is not null))
+        {
+            s.TotalCostUsd = turns.Sum(t => t.EstimatedCostUsd!.Value);
+            s.CostSource = "list_price_estimate";
+        }
+        if (s.TotalCostUsd is { } total && turns.Count > 0) s.MeanTurnCostUsd = total / turns.Count;
         s.RecordAttemptRate = s.AttemptTurns == 0 ? 0 : Math.Round((double)s.AttemptTurnsWithRecordAttempt / s.AttemptTurns, 3);
         s.Targets.Add(new Target { Name = "median_wall_ms", Rule = "<= 12000", Value = s.MedianWallMs, Pass = s.MedianWallMs <= 12000 });
         s.Targets.Add(new Target { Name = "p95_wall_ms", Rule = "<= 25000", Value = s.P95WallMs, Pass = s.P95WallMs <= 25000 });
@@ -96,6 +123,11 @@ internal sealed class RunInfo
     public int MaxOutputTokens { get; set; }
     public int Parallel { get; set; }
     public string Scripts { get; set; } = "";
+    public double? ListPricePromptPerMtok { get; set; }
+    public double? ListPriceCompletionPerMtok { get; set; }
+
+    /// <summary>Growth of the key's own spend counter over the run (USD). It also counts anyone else using the key.</summary>
+    public double? KeySpendDeltaUsd { get; set; }
 }
 
 internal sealed class EvalOutput

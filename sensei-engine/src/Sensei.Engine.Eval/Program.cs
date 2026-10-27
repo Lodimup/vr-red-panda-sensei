@@ -103,6 +103,11 @@ Console.CancelKeyPress += (_, e) =>
     cancel.Cancel();
 };
 
+var price = settings.Provider == LlmSettings.OpenRouter ? await ProviderCost.ListPriceAsync(settings.BaseUrl, settings.Model, cancel.Token).ConfigureAwait(false) : null;
+var spendBefore = settings.Provider == LlmSettings.OpenRouter ? await ProviderCost.KeySpendAsync(settings.BaseUrl, apiKey, cancel.Token).ConfigureAwait(false) : null;
+run.ListPricePromptPerMtok = price is null ? null : price.Prompt * 1_000_000;
+run.ListPriceCompletionPerMtok = price is null ? null : price.Completion * 1_000_000;
+
 var records = new ConversationRecord[conversations.Count];
 var printed = new ConversationLog?[conversations.Count];
 var gate = new SemaphoreSlim(parallel);
@@ -112,7 +117,7 @@ var tasks = conversations.Select(async (conversation, index) =>
     await gate.WaitAsync(cancel.Token).ConfigureAwait(false);
     try
     {
-        records[index] = await ConversationRunner.RunAsync(conversation, settings, apiKey, outDir, live, log => printed[index] = log, cancel.Token).ConfigureAwait(false);
+        records[index] = await ConversationRunner.RunAsync(conversation, settings, apiKey, outDir, live, price, log => printed[index] = log, cancel.Token).ConfigureAwait(false);
     }
     finally
     {
@@ -134,6 +139,8 @@ if (!live)
     foreach (var log in printed) Console.Write(log!.ToString());
 }
 
+var spendAfter = settings.Provider == LlmSettings.OpenRouter ? await ProviderCost.KeySpendAsync(settings.BaseUrl, apiKey, CancellationToken.None).ConfigureAwait(false) : null;
+if (spendBefore is { } before && spendAfter is { } after) run.KeySpendDeltaUsd = after - before;
 run.FinishedAt = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
 var output = new EvalOutput { Run = run, Conversations = records.ToList(), Summary = EvalSummary.Of(records) };
 var jsonPath = Path.Combine(outDir, "live-eval.json");
@@ -144,6 +151,8 @@ Console.WriteLine();
 Console.WriteLine("=== summary");
 Console.WriteLine($"turns {s.Turns}; failed {s.FailedTurns}; wall median {s.MedianWallMs} ms, p95 {s.P95WallMs} ms, max {s.MaxWallMs} ms; first speak median {s.MedianFirstSpeakMs} ms, p95 {s.P95FirstSpeakMs} ms; mean rounds {s.MeanRounds}");
 Console.WriteLine($"budget_exhausted {s.BudgetExhaustedTurns}; turns with duplicate lines {s.TurnsWithDuplicateLines} ({s.DuplicateLinesTotal} lines); record_attempt on {s.AttemptTurnsWithRecordAttempt}/{s.AttemptTurns} attempt turns ({s.RecordAttemptRate:P0}); failed tool calls {s.FailedToolCalls}; tokens in {s.InputTokens} out {s.OutputTokens}");
+Console.WriteLine($"input tokens per request: median {s.InputTokensMedianPerRequest}, max {s.InputTokensMaxPerRequest}; reasoning tokens {s.ReasoningTokens?.ToString(CultureInfo.InvariantCulture) ?? "not reported"}");
+Console.WriteLine($"cost: {(s.TotalCostUsd is { } total ? "$" + total.ToString("0.0000", CultureInfo.InvariantCulture) : "unknown")} for the run, {(s.MeanTurnCostUsd is { } mean ? "$" + mean.ToString("0.00000", CultureInfo.InvariantCulture) : "unknown")} per turn ({s.CostSource}); key spend counter grew by {(run.KeySpendDeltaUsd is { } delta ? "$" + delta.ToString("0.0000", CultureInfo.InvariantCulture) : "unknown")} (includes anyone else using the key)");
 foreach (var t in s.Targets) Console.WriteLine($"  {(t.Pass ? "PASS" : "FAIL")} {t.Name} {t.Rule}: {t.Value.ToString(CultureInfo.InvariantCulture)}");
 Console.WriteLine($"  MANUAL {s.ManualCheck}");
 Console.WriteLine($"live-eval: wrote {jsonPath}");

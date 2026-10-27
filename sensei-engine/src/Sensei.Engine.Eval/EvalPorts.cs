@@ -144,7 +144,7 @@ internal sealed class EvalEvents : IEngineEvents
 }
 
 /// <summary>One request that really went to the provider.</summary>
-internal sealed record ModelRequest(long Ms, long? InputTokens, long? OutputTokens, long? ReasoningTokens);
+internal sealed record ModelRequest(long Ms, long? InputTokens, long? OutputTokens, long? ReasoningTokens, double? CostUsd);
 
 /// <summary>Times every provider request of a conversation. It sits directly above the provider client.</summary>
 internal sealed class TimingChatClient : DelegatingChatClient
@@ -172,15 +172,24 @@ internal sealed class TimingChatClient : DelegatingChatClient
         var clock = Stopwatch.StartNew();
         var response = await base.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
         clock.Stop();
-        long? reasoning = null;
-        if (response.Usage?.AdditionalCounts is { } counts)
-        {
-            foreach (var pair in counts)
-                if (pair.Key.Contains("reasoning", StringComparison.OrdinalIgnoreCase)) reasoning = (reasoning ?? 0) + pair.Value;
-        }
-        lock (_gate) _requests.Add(new ModelRequest(clock.ElapsedMilliseconds, response.Usage?.InputTokenCount, response.Usage?.OutputTokenCount, reasoning));
+        var (reasoning, cost) = ReadUsage(response);
+        lock (_gate) _requests.Add(new ModelRequest(clock.ElapsedMilliseconds, response.Usage?.InputTokenCount, response.Usage?.OutputTokenCount, reasoning, cost));
         return response;
     }
+
+#pragma warning disable SCME0001 // JsonPatch: the provider's usage.cost is not a field of the OpenAI SDK's usage type.
+    /// <summary>Reasoning tokens and the provider-reported cost (USD) of one response, when it carries them.</summary>
+    private static (long? Reasoning, double? Cost) ReadUsage(ChatResponse response)
+    {
+        if (response.RawRepresentation is not OpenAI.Chat.ChatCompletion completion) return (null, null);
+        var usage = completion.Usage;
+        long? reasoning = usage?.OutputTokenDetails?.ReasoningTokenCount;
+        double? cost = null;
+        if (usage is not null && usage.Patch.TryGetValue("$.cost"u8, out double fromUsage)) cost = fromUsage;
+        else if (completion.Patch.TryGetValue("$.usage.cost"u8, out double fromCompletion)) cost = fromCompletion;
+        return (reasoning, cost);
+    }
+#pragma warning restore SCME0001
 
     public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("the agent loop does not stream");

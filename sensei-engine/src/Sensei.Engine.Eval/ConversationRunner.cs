@@ -33,6 +33,14 @@ internal sealed class TurnRecord
     public int FailedCalls { get; set; }
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
+    public long? ReasoningTokens { get; set; }
+
+    /// <summary>USD the provider reported for the turn (sum of usage.cost); null when it reports none.</summary>
+    public double? CostUsd { get; set; }
+
+    /// <summary>USD at the model's list price from the tokens of the turn; null when the price is unknown.</summary>
+    public double? EstimatedCostUsd { get; set; }
+
     public List<ModelRequest> ModelRequests { get; set; } = new();
     public string? UnspokenText { get; set; }
 }
@@ -73,7 +81,7 @@ internal sealed class ConversationRecord
 /// <summary>Plays one scripted conversation against the real provider through the real engine and measures every turn.</summary>
 internal static class ConversationRunner
 {
-    public static async Task<ConversationRecord> RunAsync(Conversation conversation, LlmSettings settings, string apiKey, string outDir, bool live, Action<ConversationLog> onDone, CancellationToken ct)
+    public static async Task<ConversationRecord> RunAsync(Conversation conversation, LlmSettings settings, string apiKey, string outDir, bool live, ListPrice? price, Action<ConversationLog> onDone, CancellationToken ct)
     {
         var log = new ConversationLog(live);
         var record = new ConversationRecord { Id = conversation.Id, Description = conversation.Description, Band = conversation.Band };
@@ -111,13 +119,13 @@ internal static class ConversationRunner
             probe.Clock.Stop();
             var requests = provider.Drain();
 
-            var row = Measure(number, turn, probe, result, requests);
+            var row = Measure(number, turn, probe, result, requests, price);
             record.Turns.Add(row);
             if (!string.IsNullOrEmpty(result.UnspokenText)) log.Line("[unspoken] " + Clip(result.UnspokenText, 400));
             if (result.ErrorCode is not null) log.Line($"error: {result.ErrorCode}: {Clip(result.ErrorDetail ?? "", 300)}");
-            log.Line("[model] " + string.Join(", ", requests.Select(r => $"{r.Ms} ms in={r.InputTokens} out={r.OutputTokens} reasoning={r.ReasoningTokens}")));
+            log.Line("[model] " + string.Join(", ", requests.Select(r => $"{r.Ms} ms in={r.InputTokens} out={r.OutputTokens} reasoning={r.ReasoningTokens} cost={r.CostUsd?.ToString("0.000000", CultureInfo.InvariantCulture)}")));
             var first = row.FirstSpeakMs is { } f ? $"first speak {f} ms" : "no speech";
-            log.Line($"Sensei: {Describe(result.Status)} (turn {result.TurnId}: {result.Status}, {result.Rounds} rounds, {result.ToolCalls.Count} tools, {row.WallMs} ms; {first}; speak calls {row.SpeakCalls}; duplicate lines {row.DuplicateSpokenLines}; record_attempt {row.RecordAttemptSuccess}/{row.RecordAttemptCalls})");
+            log.Line($"Sensei: {Describe(result.Status)} (turn {result.TurnId}: {result.Status}, {result.Rounds} rounds, {result.ToolCalls.Count} tools, {row.WallMs} ms; {first}; speak calls {row.SpeakCalls}; duplicate lines {row.DuplicateSpokenLines}; record_attempt {row.RecordAttemptSuccess}/{row.RecordAttemptCalls}; cost {FormatCost(row)})");
             if (result.Status == TurnStatuses.Failed && result.ErrorCode is TurnErrorCodes.AuthFailed or TurnErrorCodes.QuotaExceeded) break;
         }
 
@@ -126,7 +134,7 @@ internal static class ConversationRunner
         return record;
     }
 
-    private static TurnRecord Measure(int number, ScriptTurn turn, TurnProbe probe, TurnResult result, IReadOnlyList<ModelRequest> requests)
+    private static TurnRecord Measure(int number, ScriptTurn turn, TurnProbe probe, TurnResult result, IReadOnlyList<ModelRequest> requests, ListPrice? price)
     {
         var row = new TurnRecord
         {
@@ -145,6 +153,9 @@ internal static class ConversationRunner
             OutputTokens = result.OutputTokens,
             ModelRequests = requests.ToList(),
             UnspokenText = result.UnspokenText,
+            ReasoningTokens = requests.Any(r => r.ReasoningTokens is not null) ? requests.Sum(r => r.ReasoningTokens ?? 0) : null,
+            CostUsd = requests.Any(r => r.CostUsd is not null) ? requests.Sum(r => r.CostUsd ?? 0) : null,
+            EstimatedCostUsd = price is null ? null : requests.Sum(r => (r.InputTokens ?? 0) * price.Prompt + (r.OutputTokens ?? 0) * price.Completion),
         };
         foreach (var call in result.ToolCalls.Where(c => !c.Duplicate))
         {
@@ -210,6 +221,11 @@ internal static class ConversationRunner
             log.Line($"evidence {line.AttemptId} turn {line.TurnId} {line.Dimension}/{line.Key}: \"{line.TranscriptExcerpt}\" {line.LanguageAssessment}, success={line.CommunicativeSuccess}, outcome={line.Outcome}");
         return end;
     }
+
+    private static string FormatCost(TurnRecord row) =>
+        row.CostUsd is { } reported ? $"${reported.ToString("0.00000", CultureInfo.InvariantCulture)}"
+        : row.EstimatedCostUsd is { } estimate ? $"~${estimate.ToString("0.00000", CultureInfo.InvariantCulture)} (list price)"
+        : "unknown";
 
     private static string Describe(string status) => status switch
     {
