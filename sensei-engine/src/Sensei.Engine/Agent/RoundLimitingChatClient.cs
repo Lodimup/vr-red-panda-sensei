@@ -65,7 +65,7 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
             var text = message.Text;
             if (!string.IsNullOrWhiteSpace(text)) scope.AssistantText.Add(text);
         }
-        WireCallRecovery.Recover(response);
+        WireCallRecovery.Recover(response, _core.Pipeline.ReserveEngineCallId);
         RegisterUnknownTools(response);
         return response;
     }

@@ -164,6 +164,23 @@ internal sealed class EngineCore
         }
     }
 
+    /// <summary>
+    /// D6: a provider request was not sent because the outbound guard could not check its bytes (<paramref name="reason"/> is one of the
+    /// engine's own words, see <c>OutboundRejectedException</c>). Writes one <c>engine:outbound_rejected</c> trace line with error code
+    /// <c>outbound_rejected</c>. Never throws.
+    /// </summary>
+    public void TraceOutboundRejected(string reason)
+    {
+        try
+        {
+            TraceFailure("outbound_rejected", Secrets.Sanitize("request not sent: " + reason) ?? "", ToolErrorCodes.OutboundRejected);
+        }
+        catch (Exception)
+        {
+            // The turn already fails with provider_error; describing why must not change that.
+        }
+    }
+
     /// <summary>The trace line for an engine operation that failed outside a tool call (<paramref name="detail"/> is already sanitized).</summary>
     internal static TraceEntry FailureEntry(DateTimeOffset at, string sessionId, TurnState? turn, long revision, string operation, string detail,
         string errorCode = ToolErrorCodes.InternalError, string callId = "") => new()

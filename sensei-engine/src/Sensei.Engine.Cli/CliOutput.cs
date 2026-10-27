@@ -19,6 +19,9 @@ internal sealed class CliOutput
         _secrets = secrets ?? Secrets.None;
     }
 
+    /// <summary>The secrets this writer removes; the trace sink uses the same set for the lines it writes to disk (D6).</summary>
+    public Secrets Secrets => _secrets;
+
     public void Line(string text)
     {
         var clean = _secrets.Sanitize(text) ?? "";

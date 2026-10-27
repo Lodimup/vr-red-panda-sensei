@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Sensei.Engine.Llm;
 using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Agent;
@@ -64,12 +65,19 @@ internal static class ProviderErrors
     /// <summary>The HTTP status carried by the exception or by any exception in its (bounded) graph, if any.</summary>
     internal static int? FindStatus(Exception error) => Inspect(error).Status;
 
+    /// <summary>
+    /// D6: the reason, when the outbound guard refused to send the request and its exception (an exact <see cref="OutboundRejectedException"/>,
+    /// which is the engine's own) is anywhere in the bounded graph; otherwise null.
+    /// </summary>
+    internal static string? OutboundRejection(Exception error) => Inspect(error).Rejection;
+
     /// <summary>What the bounded walk over an exception graph found.</summary>
     private sealed class Graph
     {
         public Exception Primary = null!;
         public int? Status;
         public bool NetworkFailure;
+        public string? Rejection;
     }
 
     private static Graph Inspect(Exception root)
@@ -106,6 +114,11 @@ internal static class ProviderErrors
     {
         try
         {
+            if (node.GetType() == typeof(OutboundRejectedException))
+            {
+                graph.Rejection ??= ((OutboundRejectedException)node).Reason;
+                return;
+            }
             if (node.GetType() == typeof(ClientResultException))
             {
                 var status = ((ClientResultException)node).Status;
@@ -172,6 +185,7 @@ internal static class ProviderErrors
 
     private static string Describe(Graph graph, Secrets secrets)
     {
+        if (graph.Rejection is { } rejection) return "outbound request rejected: " + rejection;
         var reason = ExceptionSanitizer.Reason(graph.Primary, secrets);
         if (string.IsNullOrWhiteSpace(reason)) reason = graph.Primary.GetType().Name;
         var text = graph.Status is > 0 ? $"HTTP {graph.Status}: {reason}" : reason;

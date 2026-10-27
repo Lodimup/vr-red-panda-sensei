@@ -8,6 +8,19 @@ using System.Text.Json.Nodes;
 
 namespace Sensei.Engine.Trace;
 
+/// <summary>What <see cref="JsonRedaction.SanitizeJson"/> found in the bytes it was given.</summary>
+internal enum JsonWalkStatus
+{
+    /// <summary>One JSON document, walked whole within the value limit.</summary>
+    Ok,
+
+    /// <summary>Not a single valid JSON document (empty, malformed, trailing content, comments, invalid UTF-8 or UTF-16).</summary>
+    NotJson,
+
+    /// <summary>More JSON values than the limit allows; nothing was produced.</summary>
+    TooManyValues,
+}
+
 /// <summary>
 /// S77: the JSON side of the sanitizing chokepoint. <see cref="Secrets.Sanitize"/> is the one primitive for a string; these helpers apply
 /// it to every string value and property name of a JSON value, and to the loosely typed values a chat message carries.
@@ -17,18 +30,15 @@ internal static class JsonRedaction
     /// <summary>Compact JSON of <paramref name="element"/> with every string value and property name sanitized. Duplicate names are kept.</summary>
     public static string SanitizedText(JsonElement element, Secrets secrets)
     {
-        using var stream = new System.IO.MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
-        {
-            Write(element, writer, secrets);
-        }
-        return Encoding.UTF8.GetString(stream.ToArray());
+        var status = SanitizeJson(Encoding.UTF8.GetBytes(element.GetRawText()), Cleaner(secrets), int.MaxValue, out var output, out _, out _);
+        if (status != JsonWalkStatus.Ok) throw new JsonException("the JSON value cannot be read as text");
+        return Encoding.UTF8.GetString(output);
     }
 
     /// <summary>A detached copy of <paramref name="element"/> with every string value and property name sanitized.</summary>
     public static JsonElement Sanitized(JsonElement element, Secrets secrets)
     {
-        using var doc = JsonDocument.Parse(SanitizedText(element, secrets));
+        using var doc = JsonDocument.Parse(SanitizedText(element, secrets), new JsonDocumentOptions { MaxDepth = WalkDepth(int.MaxValue) });
         return doc.RootElement.Clone();
     }
 
@@ -45,35 +55,85 @@ internal static class JsonRedaction
     internal const string OversizedValue = "[oversized value]";
 
     /// <summary>
-    /// S131: the sanitized text of the argument JSON a provider sent, for a trace. The text is parsed with a forward-only reader (no
-    /// recursion, no depth limit; only the <see cref="MaxNodes"/> cap), every string value and property name is taken as the parser
-    /// unescapes it, sanitized, and the JSON is written again. A document that does not parse, is blank, holds invalid UTF-16 or has
-    /// more than <see cref="MaxNodes"/> values is replaced as a whole by <see cref="UnparseableArguments"/>: the raw provider text
-    /// is never returned. Duplicate property names are kept. Never throws.
+    /// D6: the most JSON values the final chokepoints walk: a provider request body, a messages JSON for a host-supplied client, a trace
+    /// line. More and the bytes are not sent or written. Twice <see cref="MaxNodes"/>: the in-memory cap bounds one loosely typed value,
+    /// the final cap bounds a whole request.
     /// </summary>
-    public static string SanitizedArgumentsText(string? json, Secrets secrets)
+    internal const int MaxFinalValues = 20_000;
+
+    /// <summary>What a trace line holds when the line itself could not be walked (D6); the reason is one of the engine's own words.</summary>
+    internal static string RejectedTraceLine(JsonWalkStatus status) =>
+        "{\"error_code\":\"trace_line_rejected\",\"detail\":\"trace line not written: "
+        + (status == JsonWalkStatus.TooManyValues ? "too_many_values" : "not_json") + "\"}";
+
+    /// <summary>
+    /// D6: the final form of a serialized JSON line (one trace entry) that may be written to disk: parsed, every string value and property
+    /// name cleaned after unescaping, written again. A line with nothing to clean is returned as it was. A line that is not one JSON
+    /// document, or has more than <see cref="MaxFinalValues"/> values, is replaced by <see cref="RejectedTraceLine"/>: the original is never
+    /// written. Never throws.
+    /// </summary>
+    public static string SanitizedJsonLine(string line, Secrets secrets)
     {
-        if (string.IsNullOrWhiteSpace(json)) return UnparseableArguments;
         try
         {
-            var bytes = new UTF8Encoding(false, throwOnInvalidBytes: true).GetBytes(json!);
-            var reader = new Utf8JsonReader(bytes, new JsonReaderOptions
+            var bytes = new UTF8Encoding(false, throwOnInvalidBytes: true).GetBytes(line);
+            var status = SanitizeJson(bytes, Cleaner(secrets), MaxFinalValues, out var output, out _, out var changed);
+            if (status != JsonWalkStatus.Ok) return RejectedTraceLine(status);
+            return changed ? Encoding.UTF8.GetString(output) : line;
+        }
+        catch (Exception)
+        {
+            return RejectedTraceLine(JsonWalkStatus.NotJson);
+        }
+    }
+
+    /// <summary>The reader and writer depth for a walk of at most <paramref name="maxValues"/> values (a nesting level costs at least one value).</summary>
+    private static int WalkDepth(int maxValues) => (int)Math.Min((long)maxValues + 1, 1_000_001);
+
+    /// <summary><see cref="Secrets.Sanitize"/> as a function that never returns null.</summary>
+    internal static Func<string, string> Cleaner(Secrets secrets) => text => secrets.Sanitize(text) ?? "";
+
+    /// <summary>
+    /// The one iterative JSON sanitizer: reads <paramref name="json"/> with a forward-only reader (no recursion, no depth limit beyond the
+    /// value limit), takes every string value and property name as the reader unescapes it, passes it through <paramref name="clean"/>,
+    /// and writes the document again with the same structure. Duplicate property names are kept and numbers keep their spelling. A value
+    /// is each object, array, string, number or literal (property names are not counted); a document with more than
+    /// <paramref name="maxValues"/> values yields <see cref="JsonWalkStatus.TooManyValues"/> and no output. A string that itself holds
+    /// JSON is just a string: it is cleaned as text and never parsed again. <paramref name="changed"/> says whether any string or name
+    /// came out different, so a caller can send the original bytes untouched when nothing needed cleaning. Never throws.
+    /// </summary>
+    internal static JsonWalkStatus SanitizeJson(ReadOnlySpan<byte> json, Func<string, string> clean, int maxValues,
+        out byte[] output, out int values, out bool changed)
+    {
+        output = Array.Empty<byte>();
+        values = 0;
+        changed = false;
+        try
+        {
+            var depth = WalkDepth(maxValues);
+            var reader = new Utf8JsonReader(json, new JsonReaderOptions
             {
                 AllowTrailingCommas = false,
                 CommentHandling = JsonCommentHandling.Disallow,
-                MaxDepth = MaxNodes + 1,
+                MaxDepth = depth,
             });
             using var stream = new System.IO.MemoryStream();
-            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, MaxDepth = MaxNodes + 1 }))
+            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, MaxDepth = depth }))
             {
-                var nodes = 0;
+                var count = 0;
+                var differs = false;
                 while (reader.Read())
                 {
                     switch (reader.TokenType)
                     {
                         case JsonTokenType.PropertyName:
-                            writer.WritePropertyName(secrets.Sanitize(reader.GetString()) ?? "");
+                        {
+                            var name = reader.GetString() ?? "";
+                            var cleanName = clean(name);
+                            if (!string.Equals(name, cleanName, StringComparison.Ordinal)) differs = true;
+                            writer.WritePropertyName(cleanName);
                             continue;
+                        }
                         case JsonTokenType.EndObject:
                             writer.WriteEndObject();
                             continue;
@@ -81,7 +141,7 @@ internal static class JsonRedaction
                             writer.WriteEndArray();
                             continue;
                     }
-                    if (++nodes > MaxNodes) return UnparseableArguments;
+                    if (++count > maxValues) return JsonWalkStatus.TooManyValues;
                     switch (reader.TokenType)
                     {
                         case JsonTokenType.StartObject:
@@ -91,8 +151,13 @@ internal static class JsonRedaction
                             writer.WriteStartArray();
                             break;
                         case JsonTokenType.String:
-                            writer.WriteStringValue(secrets.Sanitize(reader.GetString()) ?? "");
+                        {
+                            var text = reader.GetString() ?? "";
+                            var cleanText = clean(text);
+                            if (!string.Equals(text, cleanText, StringComparison.Ordinal)) differs = true;
+                            writer.WriteStringValue(cleanText);
                             break;
+                        }
                         case JsonTokenType.Number:
                             writer.WriteRawValue(reader.ValueSpan);
                             break;
@@ -106,16 +171,44 @@ internal static class JsonRedaction
                             writer.WriteNullValue();
                             break;
                         default:
-                            return UnparseableArguments;
+                            return JsonWalkStatus.NotJson;
                     }
                 }
-                if (nodes == 0) return UnparseableArguments;
+                if (count == 0) return JsonWalkStatus.NotJson;
+                values = count;
+                changed = differs;
             }
-            return Encoding.UTF8.GetString(stream.ToArray());
+            output = stream.ToArray();
+            return JsonWalkStatus.Ok;
         }
         catch (Exception)
         {
-            // Not JSON, an unreadable string, or a writer limit: nothing of the provider's text goes to the trace.
+            // Not JSON, an unreadable string, or a writer limit: the caller decides what replaces it.
+            values = 0;
+            changed = false;
+            return JsonWalkStatus.NotJson;
+        }
+    }
+
+    /// <summary>
+    /// S131: the sanitized text of the argument JSON a provider sent, for a trace. The text is parsed with a forward-only reader (no
+    /// recursion, no depth limit; only the <see cref="MaxNodes"/> cap), every string value and property name is taken as the parser
+    /// unescapes it, sanitized, and the JSON is written again. A document that does not parse, is blank, holds invalid UTF-16 or has
+    /// more than <see cref="MaxNodes"/> values is replaced as a whole by <see cref="UnparseableArguments"/>: the raw provider text
+    /// is never returned. Duplicate property names are kept. Never throws.
+    /// </summary>
+    public static string SanitizedArgumentsText(string? json, Secrets secrets)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return UnparseableArguments;
+        try
+        {
+            var bytes = new UTF8Encoding(false, throwOnInvalidBytes: true).GetBytes(json!);
+            var status = SanitizeJson(bytes, Cleaner(secrets), MaxNodes, out var output, out _, out _);
+            return status == JsonWalkStatus.Ok ? Encoding.UTF8.GetString(output) : UnparseableArguments;
+        }
+        catch (Exception)
+        {
+            // An unreadable string: nothing of the provider's text goes to the trace.
             return UnparseableArguments;
         }
     }
@@ -123,8 +216,9 @@ internal static class JsonRedaction
     /// <summary>
     /// A sanitized copy of a loosely typed value (the arguments or result of a function call in a chat message): strings, JSON elements,
     /// JSON nodes, dictionaries and sequences are rebuilt, walked with an explicit stack and no depth limit; anything else (numbers,
-    /// booleans) cannot hold text and is returned as is. A value with more than <see cref="MaxNodes"/> parts (a cycle included) is
-    /// replaced as a whole by <see cref="OversizedValue"/> and <paramref name="oversized"/> is set: nothing is forwarded unsanitized.
+    /// booleans) cannot hold text and is returned as is. A value with more than <see cref="MaxNodes"/> parts (a cycle included, and the
+    /// values inside a JSON element or node count as parts like any others) is replaced as a whole by <see cref="OversizedValue"/> and
+    /// <paramref name="oversized"/> is set: nothing is forwarded unsanitized.
     /// </summary>
     public static object? SanitizedValue(object? value, Secrets secrets) => SanitizedValue(value, secrets, out _);
 
@@ -134,6 +228,11 @@ internal static class JsonRedaction
         oversized = false;
         var nodes = 0;
         var root = Rebuild(value, secrets, ref nodes, out var rootSource);
+        if (nodes > MaxNodes)
+        {
+            oversized = true;
+            return OversizedValue;
+        }
         if (rootSource is null) return root;
 
         var pending = new Stack<(object Source, object Target)>();
@@ -177,7 +276,8 @@ internal static class JsonRedaction
 
     /// <summary>
     /// One value: a leaf comes back sanitized (and <paramref name="source"/> is null); a dictionary or sequence comes back as an
-    /// empty container of the same kind with <paramref name="source"/> set to what still has to be copied into it.
+    /// empty container of the same kind with <paramref name="source"/> set to what still has to be copied into it. A JSON element or
+    /// node is walked at once and every value inside it is added to <paramref name="nodes"/>, so it shares the limit with the rest.
     /// </summary>
     private static object? Rebuild(object? value, Secrets secrets, ref int nodes, out object? source)
     {
@@ -190,12 +290,11 @@ internal static class JsonRedaction
             case string text:
                 return secrets.Sanitize(text) ?? "";
             case JsonElement element:
-                return Sanitized(element, secrets);
+                return RebuildJson(element.GetRawText(), secrets, ref nodes);
             case JsonNode node:
                 try
                 {
-                    using var doc = JsonDocument.Parse(node.ToJsonString());
-                    return Sanitized(doc.RootElement, secrets);
+                    return RebuildJson(node.ToJsonString(), secrets, ref nodes);
                 }
                 catch (Exception)
                 {
@@ -212,30 +311,26 @@ internal static class JsonRedaction
         }
     }
 
-    private static void Write(JsonElement element, Utf8JsonWriter writer, Secrets secrets)
+    /// <summary>
+    /// The sanitized copy of one JSON value held inside a loosely typed value. Its values are counted into <paramref name="nodes"/> (the
+    /// caller already counted the value itself once); one that does not fit in what is left of <see cref="MaxNodes"/> pushes the count
+    /// over the limit, which the caller turns into the whole-value replacement.
+    /// </summary>
+    private static object? RebuildJson(string text, Secrets secrets, ref int nodes)
     {
-        switch (element.ValueKind)
+        var room = MaxNodes - (nodes - 1);
+        var status = SanitizeJson(Encoding.UTF8.GetBytes(text), Cleaner(secrets), room, out var output, out var values, out _);
+        switch (status)
         {
-            case JsonValueKind.Object:
-                writer.WriteStartObject();
-                foreach (var p in element.EnumerateObject())
-                {
-                    writer.WritePropertyName(secrets.Sanitize(p.Name) ?? p.Name);
-                    Write(p.Value, writer, secrets);
-                }
-                writer.WriteEndObject();
-                break;
-            case JsonValueKind.Array:
-                writer.WriteStartArray();
-                foreach (var item in element.EnumerateArray()) Write(item, writer, secrets);
-                writer.WriteEndArray();
-                break;
-            case JsonValueKind.String:
-                writer.WriteStringValue(secrets.Sanitize(element.GetString()) ?? "");
-                break;
+            case JsonWalkStatus.TooManyValues:
+                nodes = MaxNodes + 1;
+                return OversizedValue;
+            case JsonWalkStatus.Ok:
+                nodes += values - 1;
+                using (var doc = JsonDocument.Parse(output, new JsonDocumentOptions { MaxDepth = WalkDepth(MaxNodes) }))
+                    return doc.RootElement.Clone();
             default:
-                element.WriteTo(writer);
-                break;
+                return OversizedValue;
         }
     }
 }

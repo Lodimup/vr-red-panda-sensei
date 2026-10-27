@@ -385,6 +385,15 @@ internal sealed class ToolPipeline
 
     private string NextAutoId() => AutoPrefix + (++_autoCounter).ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// A call id of the engine's own (<c>auto-N</c>), from the same counter as the ids the pipeline assigns itself, so it is unique in this
+    /// engine instance. A call that arrives under such an id is answered <c>invalid_arguments</c> without executing (S82).
+    /// </summary>
+    public string ReserveEngineCallId()
+    {
+        lock (_core.Sync) return NextAutoId();
+    }
+
     private static ToolResult Fail(string code, string detail) => new() { Status = ToolStatuses.Failure, ErrorCode = code, Detail = detail };
 
     private static ToolResult Cancelled() => new() { Status = ToolStatuses.Cancelled, ErrorCode = ToolErrorCodes.Cancelled, Detail = "generation cancelled" };

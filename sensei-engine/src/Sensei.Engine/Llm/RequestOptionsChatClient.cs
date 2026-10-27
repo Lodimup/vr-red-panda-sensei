@@ -22,14 +22,23 @@ internal sealed class RequestOptionsChatClient : DelegatingChatClient
     private readonly string _provider;
     private readonly string _effort;
     private readonly int _maxOutputTokens;
+    private readonly OutboundGuard _guard;
 
-    public RequestOptionsChatClient(IChatClient inner, LlmSettings settings)
+    public RequestOptionsChatClient(IChatClient inner, LlmSettings settings, OutboundGuard guard)
         : base(inner)
     {
         _provider = settings.Provider;
         _effort = settings.ReasoningEffort;
         _maxOutputTokens = settings.MaxOutputTokens;
+        _guard = guard;
     }
+
+    /// <summary>
+    /// D6: the byte guard in this client's request pipeline is a service of the client, so an engine (or any wrapper stacked on top, which
+    /// forwards <c>GetService</c>) can find it and tell it which secrets to remove.
+    /// </summary>
+    public override object? GetService(Type serviceType, object? serviceKey = null) =>
+        serviceKey is null && serviceType == typeof(OutboundGuard) ? _guard : base.GetService(serviceType, serviceKey);
 
     public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         CancellationToken cancellationToken = default) =>
