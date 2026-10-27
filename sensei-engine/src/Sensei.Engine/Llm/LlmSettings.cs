@@ -43,6 +43,12 @@ public sealed class LlmSettings
     /// <summary>S125: allowed reasoning effort values, lowest first.</summary>
     public static IReadOnlyList<string> ReasoningEfforts { get; } = new[] { "none", "low", "medium", "high" };
 
+    /// <summary>The S6 four-argument form, kept so callers built against it still bind; S125 values take their defaults.</summary>
+    public LlmSettings(string provider, string apiKey, string? model, string? baseUrl)
+        : this(provider, apiKey, model, baseUrl, null, null)
+    {
+    }
+
     /// <summary>
     /// Builds settings from explicit values (what Unity does with the player's key). Applies the same validation and
     /// defaults as <see cref="FromEnvironment"/>: provider, then base URL, then key (S79).

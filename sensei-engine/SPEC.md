@@ -38,7 +38,7 @@ Every behaviour carries a story id (`S1`, `S2`, ...). Tests reference those ids.
 Presets: `openrouter` → `https://openrouter.ai/api/v1`; `meta` → `https://api.meta.ai/v1`.
 
 - **S4** `LlmSettings.FromEnvironment(IReadOnlyDictionary<string,string?> env)` applies the table above. Unknown provider → `LlmConfigurationException` whose message names the allowed values. Missing key → `LlmConfigurationException` with message `SENSEI_LLM_API_KEY is not set`. `openai_compatible` without base URL → `LlmConfigurationException`. Values are trimmed; empty counts as missing.
-- **S5** `LlmSettings.ToString()` never contains the key; it shows `provider=<p> model=<m> base_url=<u> api_key=[set]`.
+- **S5** `LlmSettings.ToString()` never contains the key; it shows `provider=<p> model=<m> base_url=<u> reasoning_effort=<e> max_output_tokens=<n> api_key=[set]` (S125 added the two middle fields). The four-argument constructor `(provider, apiKey, model, baseUrl)` stays a public overload.
 - **S6** `ChatClientFactory.Create(LlmSettings)` returns a `Microsoft.Extensions.AI.IChatClient` backed by the OpenAI chat-completions client pointed at the base URL, model and key. Unity code builds `LlmSettings` directly (the player's key) through the public constructor `LlmSettings(string provider, string apiKey, string? model = null, string? baseUrl = null)`, which applies the same validation and defaults.
 
 ## 3 Public engine API
