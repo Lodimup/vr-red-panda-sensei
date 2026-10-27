@@ -616,11 +616,10 @@ public sealed class CliAppTests
     }
 
     [Fact]
-    public async Task S109_tool_during_a_running_turn_runs_inside_that_turn_and_does_not_start_another()
+    public async Task S109_tool_during_a_running_turn_reports_the_turn_in_progress()
     {
         var chat = SlowFirstClient("slow one");
         var run = await InteractiveAsync(new StringReader("slow one\n/tool inspect_scene {}\n/quit\n"), chat);
-        Assert.Contains("[tool] inspect_scene success rev=0", run.Lines);
-        Assert.DoesNotContain(run.Lines, l => l.Contains("turn_in_progress"));
+        Assert.Contains(run.Lines, l => l.StartsWith("error: ", StringComparison.Ordinal) && l.Contains("turn_in_progress"));
     }
 }
