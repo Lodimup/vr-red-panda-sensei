@@ -64,9 +64,14 @@ internal sealed class ContextRenderer
         }
 
         var round = scope.Rounds == 0 ? 1 : scope.Rounds;
+        var containsJapanese = Sensei.Engine.Text.TextRules.ContainsJapanese(scope.Request.Transcript);
         var sb = new StringBuilder();
         sb.AppendLine("## Current state (engine-owned, refreshed before every model request)");
         sb.AppendLine($"- turn {turnId.ToString(CultureInfo.InvariantCulture)}: model round {round.ToString(CultureInfo.InvariantCulture)} of {MaxRounds.ToString(CultureInfo.InvariantCulture)}; {(MaxRounds - round).ToString(CultureInfo.InvariantCulture)} more model requests allowed after this one; {callsLeft.ToString(CultureInfo.InvariantCulture)} tool calls left this turn.");
+        sb.AppendLine(round == 1
+            ? "- this is the first request of the turn: `speak` first, then every call you can already make, all in this one response."
+            : "- the results of your earlier calls are in the conversation above. Make only the calls that still depend on them; if none do, finish now with no tool calls and no text. Do not repeat anything you already said this turn.");
+        sb.AppendLine($"- the learner's line contains Japanese (kana or kanji): {(containsJapanese ? "yes — record the attempt in this turn's first response unless it is only a greeting or a request for a translation" : "no (romanized Japanese still counts as Japanese)")}");
         sb.AppendLine($"- starting band: {band}");
         sb.AppendLine($"- working level (JLPT, hidden from the learner — never state it): {workingLevel}");
         if (selfReported is not null) sb.AppendLine($"- the learner reported their own level as: {selfReported}");
