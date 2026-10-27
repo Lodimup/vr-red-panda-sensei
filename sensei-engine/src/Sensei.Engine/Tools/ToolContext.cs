@@ -70,6 +70,15 @@ public sealed class ToolContext
     /// <summary>True once a commit made inside this call's <see cref="Locked"/> body completed the active task (S35d).</summary>
     internal bool CompletedTask { get; private set; }
 
+    private bool _committed;
+    private long _commitEpoch;
+
+    /// <summary>
+    /// True when this mutating call's <see cref="Locked"/> body returned success while its generation was current — it committed —
+    /// and no reset has removed the session's effects since (S22, S87). Read under the lock.
+    /// </summary>
+    internal bool CommitSurvives => _committed && _commitEpoch == _core.ResetEpoch;
+
     /// <summary>Called by the task book (under the lock) when a Sensei commit completes the task: credits the call whose body is running.</summary>
     internal void NoteTaskCompleted() => CompletedTask = true;
 
@@ -82,7 +91,8 @@ public sealed class ToolContext
     /// <summary>
     /// Runs <paramref name="body"/> under the engine lock after re-checking, in order, that the generation is current
     /// (else <c>cancelled</c>) and, for mutating tools, that the scene is not stale (else <c>stale_scene</c>).
-    /// The body validates, then commits, and returns the result.
+    /// The body validates, then commits, and returns the result. A success returned by a mutating tool's body is the commit
+    /// (S22): the pipeline keeps it when the generation ends afterwards, and cancels it only when a reset removed it (S87).
     /// </summary>
     public ToolResult Locked(Func<ToolResult> body)
     {
@@ -98,7 +108,13 @@ public sealed class ToolContext
             _core.ActiveContext = this;
             try
             {
-                return body();
+                var result = body();
+                if (IsMutating && result.Status == ToolStatuses.Success)
+                {
+                    _committed = true;
+                    _commitEpoch = _core.ResetEpoch;
+                }
+                return result;
             }
             finally
             {

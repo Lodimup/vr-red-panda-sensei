@@ -77,32 +77,48 @@ internal sealed class ToolPipeline
             }
             catch (Exception ex)
             {
-                // S77: what leaves the engine, to this caller and to any duplicate awaiting it, carries no known secret.
-                var safe = ExceptionSanitizer.Sanitize(ex, _core.Secrets);
+                // S87: a fault that arrives after the generation ended is late work of that generation — it settles as
+                // cancelled below, for this caller and for any duplicate awaiting it, like a result would.
+                // The exception itself is sanitized where it leaves the engine (SenseiEngine's exception boundary, S77).
+                var late = false;
                 lock (_core.Sync)
                 {
-                    var failed = call.Context!.Failure(ToolErrorCodes.InternalError, ex.GetType().Name);
-                    Finish(call, failed, stopwatch, cache: false, countFailure: false);
-                    if (call.InFlight is not null)
+                    if (call.GenerationId != _core.CurrentGeneration)
                     {
-                        _inFlight.Remove(call.InFlight.Key);
-                        call.InFlight.Completion.TrySetException(safe);
+                        late = true;
+                    }
+                    else
+                    {
+                        var failed = call.Context!.Failure(ToolErrorCodes.InternalError, ex.GetType().Name);
+                        Finish(call, failed, stopwatch, cache: false, countFailure: false);
+                        if (call.InFlight is not null)
+                        {
+                            _inFlight.Remove(call.InFlight.Key);
+                            call.InFlight.Completion.TrySetException(ex);
+                        }
                     }
                 }
-                WritePendingTraces(call);
-                _core.FlushNotifications();
-                if (ReferenceEquals(safe, ex)) throw;
-                throw safe;
+                if (!late)
+                {
+                    WritePendingTraces(call);
+                    _core.FlushNotifications();
+                    throw;
+                }
+                result = call.Context!.Cancelled();
             }
         }
 
         lock (_core.Sync)
         {
-            if (result.Status != ToolStatuses.Cancelled && call.GenerationId != _core.CurrentGeneration)
+            if (result.Status != ToolStatuses.Cancelled && call.GenerationId != _core.CurrentGeneration
+                && !(result.Status == ToolStatuses.Success && call.Context!.CommitSurvives))
             {
                 // S27, S87: work whose generation ended (cancelled, reset or ended) while it ran settles as cancelled,
                 // whatever its body returned. The generation is rechecked here, under the lock, because the body may
                 // have finished its checks before the generation ended and only its result arrived late.
+                // S22: except a success whose commit is still in the world. A call that committed under its own current
+                // generation and was cancelled afterwards has changed the scene, so it must not report "no effect";
+                // a reset removed the commit, so work from before one is cancelled as S87 says.
                 result = call.Context!.Cancelled();
             }
             else
