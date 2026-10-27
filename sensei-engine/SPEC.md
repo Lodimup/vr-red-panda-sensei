@@ -459,7 +459,7 @@ These stories were added after an adversarial review of this spec. **Where one o
 - **S127** (S35d) `completed_event_id` is the id of the event that made the predicates true (the same event whose actor is `completed_by`), not the id of the `task_completed` event appended after it.
 
 - **S128** (S71, S87, S109) In interactive mode, the read-only commands `/scene` and `/profile` also act immediately while a turn runs. `/tool` while a turn runs does not join that turn: it prints `error: turn_in_progress` and changes nothing (a normal outcome for S110, exit 0). Only when no turn runs does `/tool` begin the `(cli)` manual turn.
-  `/scene` output is: first line `Scene rev <revision>, selected: <id or none>`; second line exactly `id | catalog | region | slot | in | japanese | reading | english`; then one line per instance in that column order (`in` = container id or `-`); then, if a task is active, `Task <task_id> [<family>] active: <instruction>`.
+  `/scene` output is: first line `Scene rev <revision>, selected: <id or none>`; second line exactly `id | catalog | region | slot | in | japanese | reading | english`; then one line per instance in that column order (`in` = container id or `-`); then, if a task is active, `Task <task_id> [<family>] active: <instruction>`. With no instances, the header line is still printed and is followed by the line `(the room is empty)`.
 
 ## Decisions (differences from the PRD)
 
