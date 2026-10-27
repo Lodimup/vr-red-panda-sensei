@@ -82,6 +82,7 @@ public static class TextRules
         (cp >= 0x3400 && cp <= 0x4DBF) ||   // CJK extension A
         (cp >= 0x4E00 && cp <= 0x9FFF) ||   // CJK unified ideographs
         (cp >= 0xF900 && cp <= 0xFAFF) ||   // CJK compatibility ideographs
+        (cp >= 0x1B000 && cp <= 0x1B16F) || // Kana Supplement, Kana Extended-A, Small Kana Extension
         (cp >= 0x20000 && cp <= 0x323AF) || // CJK extensions B..H
         cp == 0x3005 || cp == 0x3006 || cp == 0x3007; // 々 〆 〇
 
