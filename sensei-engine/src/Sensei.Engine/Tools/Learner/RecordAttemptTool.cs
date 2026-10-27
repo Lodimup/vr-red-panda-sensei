@@ -99,16 +99,21 @@ public sealed class RecordAttemptTool : SenseiTool<RecordAttemptArgs>
         var profile = context.Profile;
         var target = args.Target;
 
-        // S77: learner text that would be persisted must not hold a credential.
+        // S47: one commit per (turn, dimension, key); a second call returns the first attempt's data and writes nothing,
+        // so it is resolved before any text of this call is validated: none of it would be persisted.
+        var existing = profile.Evidence.FirstOrDefault(e => !e.Superseded && e.SessionId == context.SessionId && e.TurnId == context.TurnId
+                                                            && e.Target.Dimension == target.Dimension && e.Target.Key == target.Key);
+        if (existing is not null) return context.Success(null, Data(existing, duplicate: true));
+
+        // S77: every learner text field that would be persisted (the excerpt, the note and the target's key and Japanese) must not hold a credential.
         if (context.Secrets.Check(args.TranscriptExcerpt))
             return context.Failure(ToolErrorCodes.LooksLikeCredential, "transcript_excerpt: looks like a credential");
         if (context.Secrets.Check(args.Note))
             return context.Failure(ToolErrorCodes.LooksLikeCredential, "note: looks like a credential");
-
-        // S47: one commit per (turn, dimension, key); a second call returns the first attempt's data.
-        var existing = profile.Evidence.FirstOrDefault(e => !e.Superseded && e.SessionId == context.SessionId && e.TurnId == context.TurnId
-                                                            && e.Target.Dimension == target.Dimension && e.Target.Key == target.Key);
-        if (existing is not null) return context.Success(null, Data(existing, duplicate: true));
+        if (context.Secrets.Check(target.Key))
+            return context.Failure(ToolErrorCodes.LooksLikeCredential, "target.key: looks like a credential");
+        if (context.Secrets.Check(target.Japanese))
+            return context.Failure(ToolErrorCodes.LooksLikeCredential, "target.japanese: looks like a credential");
 
         // S43, S93: the source utterance is the latest learner utterance of this or the previous turn that holds the excerpt.
         LearnerUtterance? source = null;
@@ -169,8 +174,8 @@ public sealed class RecordAttemptTool : SenseiTool<RecordAttemptArgs>
         var aids = EvidenceRules.CountedAids(target.Dimension, target.Key, boundary, sourceSequence, previousUtteranceSequence, support, context.Assistance.Records);
         var outcome = EvidenceRules.ClassifyOutcome(args.LanguageAssessment, args.CommunicativeSuccess, aids);
 
-        // S46, S98: the evidence record. The attempt is stamped after the last level change so S51's window is unambiguous.
-        var at = LevelRules.AttemptTime(profile, context.Clock.GetUtcNow());
+        // S46, S98: the evidence record. S122: the clock time is stored as is; S51's window is decided by evidence position, not by time.
+        var at = context.Clock.GetUtcNow();
         var record = new EvidenceRecord
         {
             AttemptId = profile.NextAttemptId(),
@@ -235,6 +240,8 @@ public sealed class RecordAttemptTool : SenseiTool<RecordAttemptArgs>
     /// <summary>Interaction-sequence position an earlier attempt came from: its source utterance, else its first cited event, else 0.</summary>
     private static long SourcePosition(ToolContext context, EvidenceRecord attempt)
     {
+        // Utterance and event ids restart in every engine session: only this session's attempts can be located.
+        if (attempt.SessionId != context.SessionId) return 0;
         if (attempt.SourceUtteranceId is not null && context.Utterances.Find(attempt.SourceUtteranceId) is { } utterance) return utterance.Sequence;
         long position = 0;
         foreach (var id in attempt.EventIds)

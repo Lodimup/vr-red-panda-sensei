@@ -183,7 +183,11 @@ public sealed class LabelTests
 
     // ---------------------------------------------------------------- S52 / S101
 
-    private static string[] Due(string session, params EvidenceRecord[] attempts) => EvidenceRules.ComputeReviewDue(attempts, session).ToArray();
+    private static (string Dimension, string Key)[] DueRows(JsonElement due) =>
+        due.EnumerateArray().Select(r => (r.GetProperty("dimension").GetString()!, r.GetProperty("key").GetString()!)).ToArray();
+
+    /// <summary>The keys of the review queue; for tests whose attempts all share one dimension (S97 pair identity has its own tests).</summary>
+    private static string[] Due(string session, params EvidenceRecord[] attempts) => EvidenceRules.ComputeReviewDue(attempts, session).Select(t => t.Key).ToArray();
 
     [Fact]
     public void S52_a_latest_resolved_confirmed_incorrect_is_due_even_for_a_stable_target()
@@ -242,13 +246,16 @@ public sealed class LabelTests
     }
 
     [Fact]
-    public void S97_review_due_lists_distinct_keys_in_order_of_first_attempt()
+    public void S97_review_due_lists_each_dimension_key_target_once_in_order_of_first_attempt()
     {
-        var due = Due("s-9",
+        var due = EvidenceRules.ComputeReviewDue(new[]
+        {
             Ev(X, "zzz", "production"),
             Ev(AttemptOutcomes.SuccessAfterModel, "aaa", "vocabulary"),
-            Ev(X, "zzz", "vocabulary"));
-        Assert.Equal(new[] { "zzz", "aaa" }, due);
+            Ev(X, "zzz", "vocabulary"),
+            Ev(X, "zzz", "production"),
+        }, "s-9");
+        Assert.Equal(new[] { ("production", "zzz"), ("vocabulary", "aaa"), ("vocabulary", "zzz") }, due);
     }
 
     // ---------------------------------------------------------------- S55 summary rows
@@ -337,7 +344,7 @@ public sealed class LabelTests
         Assert.Equal(1, targets[0].GetProperty("attempts").GetInt32());
         Assert.Equal("practiced", targets[1].GetProperty("label").GetString());
         Assert.Equal("confirmed_incorrect", targets[1].GetProperty("last_outcome").GetString());
-        Assert.Equal(new[] { "ringo", "mizu" }, StrArray(d.GetProperty("review_due")));
+        Assert.Equal(new[] { ("production", "ringo"), ("vocabulary", "mizu") }, DueRows(d.GetProperty("review_due")));
         Assert.Equal(JsonValueKind.Array, d.GetProperty("recommendations").ValueKind);
         Assert.Equal("cats", d.GetProperty("notes").GetProperty("likes").GetString());
     }
@@ -423,7 +430,7 @@ public sealed class LabelTests
         await SayAndAttempt(t, "production", "ringo", "りんごをください");
         t.Engine.BeginTurn("q");
         var d = DataOf(await t.CallAsync("query_learner", "{}"));
-        Assert.Equal(new[] { "ringo" }, StrArray(d.GetProperty("review_due")));
+        Assert.Equal(new[] { ("production", "ringo") }, DueRows(d.GetProperty("review_due")));
     }
 
     [Fact]

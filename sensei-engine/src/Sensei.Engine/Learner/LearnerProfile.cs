@@ -110,6 +110,9 @@ public sealed class LevelChange
     /// <summary>Attempt ids that drove an evidence-driven change (S100); null for band/self-report/difficulty.</summary>
     public List<string>? EvidenceIds { get; set; }
 
+    /// <summary>S122: the number of evidence records in the profile at the moment of the change; an entry without it (older file) reads as 0.</summary>
+    public int AttemptCount { get; set; }
+
     [JsonRequired]
     public bool Superseded { get; set; }
 }
@@ -173,6 +176,7 @@ public sealed class EvidenceRecord
     /// <summary><c>task_completed</c> | <c>task_active</c> | <c>no_task</c>.</summary>
     [JsonRequired]
     public string EngineOutcome { get; set; } = "";
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? TaskId { get; set; }
 
     [JsonRequired]
