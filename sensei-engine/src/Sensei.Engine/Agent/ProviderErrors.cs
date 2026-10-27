@@ -5,6 +5,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Sensei.Engine.Trace;
 
@@ -15,7 +16,7 @@ namespace Sensei.Engine.Agent;
 /// <para>
 /// The provider's exception is foreign input (S77, D2): the graph is walked iteratively with a visited set and at most
 /// <see cref="ExceptionSanitizer.MaxNodes"/> nodes, every read is inside a guard, the status comes only from the public property of an exact
-/// <see cref="ClientResultException"/> (never from formatted text, reflection or a subclass), and a <c>Message</c> is read only for the closed list of framework types whose message is a stored
+/// <see cref="ClientResultException"/> or <see cref="HttpRequestException"/> (never from formatted text or a subclass), and a <c>Message</c> is read only for the closed list of framework types whose message is a stored
 /// string (<see cref="ExceptionSanitizer.Reason"/>). The detail is sanitized first and shortened after, so a cut can never leave the
 /// prefix of a secret behind.
 /// </para>
@@ -23,6 +24,12 @@ namespace Sensei.Engine.Agent;
 internal static class ProviderErrors
 {
     private const int MaxDetailLength = 300;
+
+    /// <summary>
+    /// <c>HttpRequestException.StatusCode</c> of the framework type itself, looked up once; null on a runtime that has none. Read only for
+    /// a node of exactly that type, so the getter that runs is the framework's, never a subclass's.
+    /// </summary>
+    private static readonly PropertyInfo? HttpRequestStatus = FindHttpRequestStatus();
 
     /// <summary>401/403 → auth_failed, 402/429 → quota_exceeded, connection failures and timeouts → network_error, anything else → provider_error.</summary>
     public static (string Code, string Detail) Map(Exception error, Secrets secrets)
@@ -40,6 +47,18 @@ internal static class ProviderErrors
         }
         if (graph.Status is null && graph.NetworkFailure) return (TurnErrorCodes.NetworkError, detail);
         return (TurnErrorCodes.ProviderError, detail);
+    }
+
+    private static PropertyInfo? FindHttpRequestStatus()
+    {
+        try
+        {
+            return typeof(HttpRequestException).GetProperty("StatusCode");
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>The HTTP status carried by the exception or by any exception in its (bounded) graph, if any.</summary>
@@ -76,11 +95,12 @@ internal static class ProviderErrors
     }
 
     /// <summary>
-    /// Reads the status and the kind of failure one node stands for. The HTTP status is read from exactly one place: the public
-    /// <c>Status</c> of a node whose type is exactly <see cref="ClientResultException"/> (S132), which is what the OpenAI client raises
-    /// for every HTTP error response and which exists on every target. No member of any other exception is read: not a subclass of
-    /// that type, not <see cref="HttpRequestException"/> (whose <c>StatusCode</c> is not on netstandard2.1), nothing by reflection.
-    /// Everything else is classified by its type alone, which runs no foreign code.
+    /// Reads the status and the kind of failure one node stands for. An HTTP status is read from exactly two kinds of node, both by
+    /// exact type (S132): the public <c>Status</c> of a <see cref="ClientResultException"/> (what the OpenAI client raises for every HTTP
+    /// error response; it exists on every target), and the <c>StatusCode</c> of an <see cref="HttpRequestException"/> through the one
+    /// cached <see cref="HttpRequestStatus"/> property of that framework type, which is absent on runtimes without it (netstandard2.1
+    /// has none) and then says nothing. The getter that runs is the framework's own. A subclass of either type, and every other
+    /// exception, is classified by its type alone, which runs no foreign code: no member of it is read and no reflection touches it.
     /// </summary>
     private static void Observe(Exception node, Graph graph)
     {
@@ -91,6 +111,12 @@ internal static class ProviderErrors
                 var status = ((ClientResultException)node).Status;
                 if (status > 0) graph.Status ??= status;
                 else graph.NetworkFailure = true;
+                return;
+            }
+            if (node.GetType() == typeof(HttpRequestException))
+            {
+                graph.NetworkFailure = true;
+                if (HttpRequestStatus?.GetValue(node) is HttpStatusCode code && (int)code > 0) graph.Status ??= (int)code;
                 return;
             }
             if (node is HttpRequestException || node is SocketException || node is IOException || node is WebException

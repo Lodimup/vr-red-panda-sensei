@@ -93,7 +93,7 @@ public sealed class ReviewS4Findings
     {
         var chat = new ScriptedChatClient().EnqueueError(new AggregateException(
             new InvalidOperationException("wrapper branch"),
-            new System.ClientModel.ClientResultException("provider denied the request", new FakePipelineResponse(401))));
+            new HttpRequestException("provider denied the request", null, HttpStatusCode.Unauthorized)));
         await using var t = await EngineAsync(chat);
         var result = await t.Engine.RunTurnAsync("hello");
         Assert.Equal("auth_failed", result.ErrorCode);
@@ -144,7 +144,7 @@ public sealed class ReviewS4Findings
     public async Task F05_Wrapped_aggregate_must_inspect_every_error_branch(int status, string expected)
     {
         Exception cause = status == 0 ? new TimeoutException("provider timed out")
-            : new System.ClientModel.ClientResultException("provider failed", new FakePipelineResponse(status));
+            : new HttpRequestException("provider failed", null, (HttpStatusCode)status);
         var chat = new ScriptedChatClient().EnqueueError(new InvalidOperationException("outer",
             new AggregateException(new InvalidOperationException("first branch"), cause)));
         await using var t = await EngineAsync(chat);

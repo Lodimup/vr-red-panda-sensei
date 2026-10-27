@@ -235,7 +235,7 @@ public sealed class ReviewFinalControls
     [InlineData(500, TurnErrorCodes.ProviderError)]
     public async Task Ordinary_http_statuses_still_map_correctly(int status, string code)
     {
-        var chat = new ScriptedChatClient().EnqueueError(new System.ClientModel.ClientResultException("ordinary failure", new FakePipelineResponse(status)));
+        var chat = new ScriptedChatClient().EnqueueError(new HttpRequestException("ordinary failure", null, (System.Net.HttpStatusCode)status));
         await using var t = await EngineAsync(chat);
         var result = await t.Engine.RunTurnAsync("hello");
         Assert.Equal(code, result.ErrorCode);
