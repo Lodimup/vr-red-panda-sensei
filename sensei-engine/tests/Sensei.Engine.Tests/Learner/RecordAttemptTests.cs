@@ -556,7 +556,7 @@ public sealed class RecordAttemptTests
         t.Engine.BeginTurn("りんご");
         var implicitBind = await Attempt(t, "production", "ringo", "りんご");
         Assert.Equal("no_task", Str(implicitBind, "engine_outcome"));
-        Assert.False(DataOf(implicitBind).TryGetProperty("task_id", out _));
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, DataOf(implicitBind).GetProperty("task_id").ValueKind); // S46: present, null
         t.Engine.BeginTurn("りんご");
         var explicitBind = await Attempt(t, "production", "ringo", "りんご", taskId: task.TaskId);
         Assert.Equal(ToolErrorCodes.NoActiveTask, explicitBind.ErrorCode);
@@ -588,7 +588,7 @@ public sealed class RecordAttemptTests
         lock (t.Core.Sync) t.Core.Tasks.CommitAbandon(t.Core.CurrentTurnId);
         var sameTurn = await Attempt(t, "production", "ringo", "りんご");
         Assert.Equal("no_task", Str(sameTurn, "engine_outcome"));
-        Assert.False(DataOf(sameTurn).TryGetProperty("task_id", out _));
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, DataOf(sameTurn).GetProperty("task_id").ValueKind); // S46: present, null
         var next = await SayAndAttempt(t, "production", "mizu", "みずをください");
         Assert.Equal("no_task", Str(next, "engine_outcome"));
     }

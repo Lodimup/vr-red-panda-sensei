@@ -10,10 +10,10 @@ namespace Sensei.Engine.Learner;
 /// <see cref="SupportRules.SetWorkingLevel"/>, so only an actual change appends to <c>level_history</c>.
 /// </summary>
 /// <remarks>
-/// The window is "resolved, non-superseded attempts since the last level change". The last level change is the last
-/// non-superseded <c>level_history</c> entry. For an evidence-driven entry the window starts after the last attempt in its
-/// <c>evidence_ids</c>; for any other entry (band, self report, difficulty) it starts after the entry's <c>at</c>, which
-/// <see cref="AttemptTime"/> keeps strictly before the <c>at</c> of every later attempt.
+/// The window is "resolved, non-superseded attempts since the last level change" (S51). The last level change is the last
+/// non-superseded <c>level_history</c> entry; the window is the evidence at positions <c>&gt;= attempt_count</c> of that entry
+/// (S122), in profile order. Timestamps are never adjusted and never decide the window; an entry without
+/// <c>attempt_count</c> reads as 0.
 /// </remarks>
 public static class LevelRules
 {
@@ -35,26 +35,15 @@ public static class LevelRules
     /// <summary>S51 down: different targets those attempts must span.</summary>
     public const int DownMinTargets = 2;
 
-    /// <summary>
-    /// The <c>at</c> to stamp on a new attempt: <paramref name="now"/>, moved one tick past the last non-evidence level change
-    /// when the clock has not advanced since, so the attempt is unambiguously after that change.
-    /// </summary>
-    public static DateTimeOffset AttemptTime(LearnerProfile profile, DateTimeOffset now)
-    {
-        var anchor = LastEffectiveChange(profile);
-        if (anchor is not null && !IsEvidenceDriven(anchor) && now <= anchor.At) return anchor.At.AddTicks(1);
-        return now;
-    }
-
-    /// <summary>S51/S102: after a committed attempt, applies the up/down rule over resolved attempts since the last level change.</summary>
+    /// <summary>S51/S102/S122: after a committed attempt, applies the up/down rule over resolved attempts since the last level change.</summary>
     public static void ApplyEvidenceLevelRules(LearnerProfile profile, DateTimeOffset at)
     {
-        var start = WindowStart(profile, LastEffectiveChange(profile));
+        var start = WindowStart(LastEffectiveChange(profile));
         var window = new List<EvidenceRecord>();
-        for (var i = 0; i < profile.Evidence.Count; i++)
+        for (var i = start; i < profile.Evidence.Count; i++)
         {
             var e = profile.Evidence[i];
-            if (start.Includes(i, e) && !e.Superseded && EvidenceRules.IsResolved(e)) window.Add(e);
+            if (!e.Superseded && EvidenceRules.IsResolved(e)) window.Add(e);
         }
         var decision = Decide(profile.WorkingLevel, window);
         if (decision is not null) SupportRules.SetWorkingLevel(profile, decision.Level, decision.Reason, at, decision.EvidenceIds);
@@ -79,16 +68,16 @@ public static class LevelRules
 
         var anchor = LastEffectiveChange(profile);
         profile.WorkingLevel = anchor?.To ?? (history.Count > 0 ? history[0].From : profile.WorkingLevel);
-        var start = WindowStart(profile, anchor);
         var window = new List<EvidenceRecord>();
-        for (var i = 0; i < profile.Evidence.Count; i++)
+        for (var i = WindowStart(anchor); i < profile.Evidence.Count; i++)
         {
             var e = profile.Evidence[i];
-            if (!start.Includes(i, e) || e.Superseded || !EvidenceRules.IsResolved(e)) continue;
+            if (e.Superseded || !EvidenceRules.IsResolved(e)) continue;
             window.Add(e);
             var decision = Decide(profile.WorkingLevel, window);
             if (decision is null) continue;
-            SupportRules.SetWorkingLevel(profile, decision.Level, decision.Reason, at, decision.EvidenceIds);
+            if (SupportRules.SetWorkingLevel(profile, decision.Level, decision.Reason, at, decision.EvidenceIds))
+                profile.LevelHistory[profile.LevelHistory.Count - 1].AttemptCount = i + 1; // S122: the change as it would have happened at this attempt
             window.Clear();
         }
     }
@@ -98,18 +87,8 @@ public static class LevelRules
     private static bool IsEvidenceDriven(LevelChange change) =>
         change.Reason == LevelChangeReasons.EvidenceUp || change.Reason == LevelChangeReasons.EvidenceDown;
 
-    private static WindowFilter WindowStart(LearnerProfile profile, LevelChange? anchor)
-    {
-        if (anchor is null) return new WindowFilter(0, null);
-        if (IsEvidenceDriven(anchor) && anchor.EvidenceIds is { Count: > 0 })
-        {
-            var last = -1;
-            for (var i = 0; i < profile.Evidence.Count; i++)
-                if (anchor.EvidenceIds.Contains(profile.Evidence[i].AttemptId)) last = i;
-            if (last >= 0) return new WindowFilter(last + 1, null);
-        }
-        return new WindowFilter(0, anchor.At);
-    }
+    /// <summary>S122: the first evidence position of the window after <paramref name="anchor"/> (0 with no level change).</summary>
+    private static int WindowStart(LevelChange? anchor) => Math.Max(0, anchor?.AttemptCount ?? 0);
 
     /// <summary>The rule decision for <paramref name="window"/> (resolved, non-superseded attempts since the last change) at <paramref name="level"/>.</summary>
     private static Decision? Decide(string level, IReadOnlyList<EvidenceRecord> window)
@@ -132,18 +111,4 @@ public static class LevelRules
     }
 
     private sealed record Decision(string Level, string Reason, List<string> EvidenceIds);
-
-    private readonly struct WindowFilter
-    {
-        private readonly int _minIndex;
-        private readonly DateTimeOffset? _after;
-
-        public WindowFilter(int minIndex, DateTimeOffset? after)
-        {
-            _minIndex = minIndex;
-            _after = after;
-        }
-
-        public bool Includes(int index, EvidenceRecord attempt) => index >= _minIndex && (_after is null || attempt.At > _after.Value);
-    }
 }

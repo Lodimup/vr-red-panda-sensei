@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
@@ -46,10 +47,19 @@ public sealed class QueryLearnerTool : SenseiTool<QueryLearnerArgs>
                 ["support"] = ToolContext.ToNode(profile.Support, SenseiJsonContext.Default.SupportSettings),
                 ["pinned"] = ToolContext.ToNode(profile.Pinned, SenseiJsonContext.Default.ListString),
                 ["targets"] = ToolContext.ToNode(targets, SenseiJsonContext.Default.ListTargetLabel),
-                ["review_due"] = ToolContext.ToNode(EvidenceRules.ComputeReviewDue(profile.Evidence, context.SessionId).ToList(), SenseiJsonContext.Default.ListString),
+                ["review_due"] = ReviewDueNode(profile.Evidence, context.SessionId),
                 ["recommendations"] = ToolContext.ToNode(EvidenceRules.ComputeRecommendations(profile.Evidence).ToList(), SenseiJsonContext.Default.ListRecommendation),
                 ["notes"] = ToolContext.ToNode(profile.Notes, SenseiJsonContext.Default.DictionaryStringString),
             };
             return context.Success(null, ToolContext.ToData(data));
         }));
+
+    /// <summary>S52, S97: the review queue holds target identities, so each item names its dimension as well as its key.</summary>
+    private static JsonArray ReviewDueNode(IReadOnlyList<EvidenceRecord> evidence, string sessionId)
+    {
+        var items = new JsonArray();
+        foreach (var (dimension, key) in EvidenceRules.ComputeReviewDue(evidence, sessionId))
+            items.Add(new JsonObject { ["key"] = key, ["dimension"] = dimension });
+        return items;
+    }
 }
