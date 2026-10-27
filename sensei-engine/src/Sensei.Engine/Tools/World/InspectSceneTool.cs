@@ -28,6 +28,6 @@ public sealed class InspectSceneTool : SenseiTool<InspectSceneArgs>
     protected override JsonTypeInfo<InspectSceneArgs> ArgsTypeInfo => SenseiJsonContext.Default.InspectSceneArgs;
 
     public override Task<ToolResult> ExecuteAsync(InspectSceneArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Locked(() =>
+        Task.FromResult(context.Read(() =>
             context.Success(null, ToolContext.ToData(context.World.Snapshot(), SenseiJsonContext.Default.SceneSnapshot))));
 }

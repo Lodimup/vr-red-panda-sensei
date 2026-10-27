@@ -1,5 +1,6 @@
 using System;
 using System.Text.RegularExpressions;
+using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Storage;
 
@@ -14,6 +15,6 @@ public static class ProfileIds
     public static void Validate(string? profileId, string paramName = "profileId")
     {
         if (!IsValid(profileId))
-            throw new ArgumentException("profile id must match ^[a-z0-9_-]{1,40}$", paramName);
+            throw Authored.Argument("profile id must match ^[a-z0-9_-]{1,40}$", paramName);
     }
 }

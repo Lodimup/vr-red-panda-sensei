@@ -73,13 +73,15 @@ internal sealed class ToolPipeline
             }
             catch (OperationCanceledException) when (linked.IsCancellationRequested)
             {
-                result = call.Context!.Cancelled();
+                // S22: a call that already committed in memory reports that commit, never `cancelled`.
+                result = EndedWithoutResult(call.Context!);
             }
             catch (Exception ex)
             {
-                // S87: a fault that arrives after the generation ended is late work of that generation — it settles as
-                // cancelled below, for this caller and for any duplicate awaiting it, like a result would.
-                // The exception itself is sanitized where it leaves the engine (SenseiEngine's exception boundary, S77).
+                // S87: a fault that arrives after the generation ended is late work of that generation — it settles below, for this
+                // caller and for any duplicate awaiting it, like a result would: as `cancelled`, or as the success of a commit that
+                // survived (S22, D4). The exception itself is described to the trace and replaced where it leaves the engine (SenseiEngine's
+                // exception boundary, S77).
                 var late = false;
                 lock (_core.Sync)
                 {
@@ -89,6 +91,7 @@ internal sealed class ToolPipeline
                     }
                     else
                     {
+                        FaultCategories.Tag(ex, FaultCategories.Internal);
                         var failed = call.Context!.Failure(ToolErrorCodes.InternalError, ex.GetType().Name);
                         Finish(call, failed, stopwatch, cache: false, countFailure: false);
                         if (call.InFlight is not null)
@@ -104,31 +107,33 @@ internal sealed class ToolPipeline
                     _core.FlushNotifications();
                     throw;
                 }
-                result = call.Context!.Cancelled();
+                result = EndedWithoutResult(call.Context!);
             }
         }
 
         lock (_core.Sync)
         {
-            if (result.Status != ToolStatuses.Cancelled && call.GenerationId != _core.CurrentGeneration
-                && !(result.Status == ToolStatuses.Success && call.Context!.CommitSurvives))
+            var committed = call.Context!.CommitSurvives;
+            if (committed && result.Status == ToolStatuses.Cancelled && call.Context.CommittedResult is { } kept)
+            {
+                // S22: the body said `cancelled` after it had committed; what it committed is in the world, so that is what it reports.
+                result = kept;
+            }
+            else if (result.Status != ToolStatuses.Cancelled && call.GenerationId != _core.CurrentGeneration && !committed)
             {
                 // S27, S87: work whose generation ended (cancelled, reset or ended) while it ran settles as cancelled,
                 // whatever its body returned. The generation is rechecked here, under the lock, because the body may
                 // have finished its checks before the generation ended and only its result arrived late.
-                // S22: except a success whose commit is still in the world. A call that committed under its own current
-                // generation and was cancelled afterwards has changed the scene, so it must not report "no effect";
+                // S22: except a call whose commit is still in the world (a Locked body returned success, for a scene or a profile
+                // change alike, and no reset removed it since). It has changed something, so it must not report "no effect";
                 // a reset removed the commit, so work from before one is cancelled as S87 says.
                 result = call.Context!.Cancelled();
             }
-            else
-            {
-                // S35d: only the call that itself completed the task reports it, not every call overlapping the event.
-                if (result.Status == ToolStatuses.Success && call.Context!.CompletedTask)
-                    result.Data = WithTaskStatus(result.Data);
-                if (result.Status == ToolStatuses.Success && call.Context!.EndsGeneration)
-                    _core.EndGeneration(call.GenerationId);
-            }
+            // S35d: only the call that itself completed the task reports it, not every call overlapping the event.
+            if (result.Status == ToolStatuses.Success && call.Context!.CompletedTask)
+                result.Data = WithTaskStatus(result.Data);
+            if (result.Status == ToolStatuses.Success && call.Context!.EndsGeneration)
+                _core.EndGeneration(call.GenerationId);
             result = Finish(call, result, stopwatch, cache: true, countFailure: true);
         }
         WritePendingTraces(call);
@@ -136,6 +141,15 @@ internal sealed class ToolPipeline
         return result;
     }
 
+    /// <summary>
+    /// What a call reports when it ended without a result of its own, because its generation was cancelled or it faulted after
+    /// that generation ended: the success of the commit it made, if that commit is still in the world, else <c>cancelled</c>
+    /// (S22, S87). Takes the lock.
+    /// </summary>
+    private ToolResult EndedWithoutResult(ToolContext context)
+    {
+        lock (_core.Sync) return context.CommitSurvives && context.CommittedResult is { } kept ? kept : context.Cancelled();
+    }
 
     /// <summary>S26: <c>stale_scene</c> (with a fresh snapshot) when a player <c>moved</c> event is newer than the round base. Under the lock.</summary>
     public ToolResult? CheckStale(TurnState turn)

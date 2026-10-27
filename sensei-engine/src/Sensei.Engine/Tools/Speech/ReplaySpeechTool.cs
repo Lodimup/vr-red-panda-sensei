@@ -36,7 +36,7 @@ public sealed class ReplaySpeechTool : SenseiTool<ReplaySpeechArgs>
     public override async Task<ToolResult> ExecuteAsync(ReplaySpeechArgs args, ToolContext context, CancellationToken ct)
     {
         SpeechPlan? plan = null;
-        var gate = context.Locked(() =>
+        var gate = context.Read(() =>
         {
             var entry = args.UtteranceId is null ? context.SpeechHistory.Latest : context.SpeechHistory.Find(args.UtteranceId);
             if (entry is null)

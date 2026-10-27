@@ -113,7 +113,7 @@ public sealed class ExceptionBoundaryTests
         var safe = Assert.IsType<SenseiEngineException>(error);
         AssertBoundaryException(safe);
         Assert.Equal(typeof(LeakyException).FullName, safe.OriginalType);
-        Assert.Contains("[redacted]", safe.Message);
+        Assert.Equal("set_preference_by_player failed: profile_store_error", safe.Message);
     }
 
     // ------------------------------------------------------------------ every entry point
@@ -373,7 +373,7 @@ public sealed class ExceptionBoundaryTests
 
         Assert.IsType<InvalidOperationException>(error);
         AssertBoundaryException(error);
-        Assert.Contains("[redacted]", error!.Message);
+        Assert.Equal("set_starting_band failed: profile_store_error", error!.Message);
     }
 
     [Fact]
@@ -461,7 +461,7 @@ public sealed class ExceptionBoundaryTests
     [Theory]
     [InlineData(18, false)]
     [InlineData(18, true)]
-    [InlineData(400, false)]
+    [InlineData(30, false)]
     public async Task S77_the_trace_holds_the_whole_sanitized_chain_not_a_truncated_one(int wrappers, bool secretAtRoot)
     {
         await using var t = await TestEngine.CreateAsync(knownSecrets: new[] { Secret });
@@ -480,6 +480,24 @@ public sealed class ExceptionBoundaryTests
         Assert.Contains("leaf: [redacted]", entry.Arguments);
         var last = wrappers + (secretAtRoot ? 1 : 0);
         Assert.Contains("[" + last + "]", entry.Arguments);
+    }
+
+    [Fact]
+    public async Task S77_the_trace_of_a_longer_chain_stops_at_the_node_limit_and_says_so()
+    {
+        await using var t = await TestEngine.CreateAsync(knownSecrets: new[] { Secret });
+        Exception failure = new IOException("leaf: " + Secret);
+        for (var i = 0; i < 400; i++) failure = new IOException("wrapper " + i, failure);
+        t.Store.FailSavesWith = failure;
+
+        var error = await Record.ExceptionAsync(() => t.Engine.SetPreferenceByPlayerAsync(new SupportPatch { ShowRomaji = false }));
+
+        AssertBoundaryException(error);
+        var entry = Assert.Single(t.Trace.Entries, e => e.Tool == "engine:SetPreferenceByPlayerAsync");
+        Assert.DoesNotContain(Secret, entry.Arguments);
+        Assert.Contains("[31] inside [30]", entry.Arguments);
+        Assert.DoesNotContain("[32]", entry.Arguments);
+        Assert.Contains("(more exceptions not shown)", entry.Arguments);
     }
 
     [Fact]
@@ -509,7 +527,7 @@ public sealed class ExceptionBoundaryTests
     // ------------------------------------------------------------------ the sanitizer's description
 
     [Fact]
-    public void S77_describe_walks_a_very_deep_chain_without_a_depth_limit_and_without_recursion()
+    public void S77_describe_walks_a_very_deep_chain_iteratively_and_stops_at_the_node_limit()
     {
         var secrets = new Secrets(new[] { Secret });
         Exception chain = new IOException("leaf " + Secret);
@@ -518,12 +536,14 @@ public sealed class ExceptionBoundaryTests
         var text = ExceptionSanitizer.Describe(chain, secrets);
 
         Assert.DoesNotContain(Secret, text);
-        Assert.Contains("[20000]", text);
-        Assert.Contains("leaf [redacted]", text);
+        Assert.Contains("[31] inside [30]", text);
+        Assert.DoesNotContain("[32]", text);
+        Assert.Contains("(more exceptions not shown)", text);
+        Assert.Contains("wrapper 19999", text);
     }
 
     [Fact]
-    public void S77_describe_covers_aggregate_members_data_source_help_link_and_stack()
+    public void S77_describe_covers_aggregate_members_and_reads_no_data_source_help_link_or_stack()
     {
         var secrets = new Secrets(new[] { Secret });
         Exception thrown;
@@ -540,11 +560,16 @@ public sealed class ExceptionBoundaryTests
         var text = ExceptionSanitizer.Describe(aggregate, secrets);
 
         Assert.DoesNotContain(Secret, text);
-        Assert.Contains("[redacted]", text);
-        Assert.Contains("data credential = [redacted]", text);
-        Assert.Contains("source: driver-[redacted]", text);
-        Assert.Contains("   at Sensei.Engine.Tests.Foundation.ExceptionBoundaryTests.", text);
         Assert.Contains("second [redacted]", text);
+        Assert.Contains("[0] System.AggregateException\n", text);
+        Assert.Contains(typeof(LeakyException).FullName!, text);
+        // Only the closed list of framework types has its message read: not the aggregate's (it formats every child), not a subclass's.
+        Assert.DoesNotContain("many", text);
+        Assert.DoesNotContain("leaky dependency", text);
+        Assert.DoesNotContain("data credential", text);
+        Assert.DoesNotContain("source:", text);
+        Assert.DoesNotContain("help:", text);
+        Assert.DoesNotContain("   at ", text);
     }
 
     [Fact]
@@ -571,7 +596,8 @@ public sealed class ExceptionBoundaryTests
         var engine = Assert.IsType<SenseiEngineException>(safe);
         Assert.Null(engine.InnerException);
         Assert.DoesNotContain(Secret, engine.ToString());
-        Assert.Null(detail);
+        // The Message getter is never called: the description is the type name alone.
+        Assert.Equal("[0] " + typeof(HostileMessageException).FullName + "\n", detail);
     }
 
     [Fact]

@@ -55,7 +55,7 @@ public sealed class BoundaryTests
         // The boundary (ruling: one SenseiEngineException, no inner) replaces the dependency's exception object.
         var safe = Assert.IsType<SenseiEngineException>(error);
         Assert.Equal(typeof(IOException).FullName, safe.OriginalType);
-        Assert.Equal("store write failed", safe.Message);
+        Assert.Equal("set_starting_band failed: profile_store_error", safe.Message);
         Assert.Null(safe.InnerException);
         Assert.DoesNotContain(Secret, safe.ToString());
     }
@@ -70,14 +70,14 @@ public sealed class BoundaryTests
 
         var safe = Assert.IsType<SenseiEngineException>(error);
         Assert.Contains(nameof(DependencyFailure), safe.OriginalType);
-        Assert.Contains("[redacted]", safe.Message);
+        Assert.Equal("set_preference_by_player failed: profile_store_error", safe.Message);
         Assert.Null(safe.InnerException);
         Assert.DoesNotContain(Secret, safe.ToString());
         Assert.DoesNotContain(Secret, string.Join('|', safe.Data.Values.Cast<object?>()));
     }
 
     [Fact]
-    public async Task S77_an_exception_with_nothing_to_redact_is_still_replaced_and_keeps_its_message()
+    public async Task S77_an_exception_with_nothing_to_redact_is_still_replaced_with_an_engine_authored_message()
     {
         await using var t = await TestEngine.CreateAsync(knownSecrets: new[] { Secret });
         var original = new IOException("disk full");
@@ -87,7 +87,7 @@ public sealed class BoundaryTests
 
         var safe = Assert.IsType<SenseiEngineException>(error);
         Assert.NotSame(original, error);
-        Assert.Equal("disk full", safe.Message);
+        Assert.Equal("set_starting_band failed: profile_store_error", safe.Message);
         Assert.Null(safe.InnerException);
     }
 
@@ -100,7 +100,7 @@ public sealed class BoundaryTests
 
         Assert.NotNull(error);
         Assert.DoesNotContain(Secret, error.ToString());
-        Assert.Contains("[redacted]", error.Message);
+        Assert.Equal("create failed: profile_store_error", error.Message);
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public sealed class BoundaryTests
 
         Assert.NotNull(error);
         Assert.DoesNotContain(Secret, error.ToString());
-        Assert.Contains("[redacted]", error.Message);
+        Assert.Equal("reset_profile failed: profile_store_error", error.Message);
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class BoundaryTests
         Assert.IsType<InvalidOperationException>(duplicateError);
         Assert.DoesNotContain(Secret, firstError!.ToString());
         Assert.DoesNotContain(Secret, duplicateError!.ToString());
-        Assert.Contains("[redacted]", firstError.Message);
+        Assert.Equal("invoke_tool failed: internal_error", firstError.Message);
     }
 
     // ------------------------------------------------------------------ S78: spans are matched against the original text
