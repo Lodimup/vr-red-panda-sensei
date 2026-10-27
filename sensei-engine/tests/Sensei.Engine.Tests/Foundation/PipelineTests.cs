@@ -806,12 +806,14 @@ public sealed class PipelineTests
     }
 
     [Fact]
-    public async Task S77_malformed_arguments_are_redacted_as_raw_text()
+    public async Task S131_malformed_arguments_are_replaced_in_the_trace_not_stored_as_raw_text()
     {
         await using var t = await NewAsync(secrets: new[] { "zq9secret" });
         t.Engine.BeginTurn("x");
         await t.CallAsync("test_probe", "{zq9secret");
-        Assert.Equal("{[redacted]", t.Trace.Entries.Single().Arguments);
+        var arguments = t.Trace.Entries.Single().Arguments;
+        Assert.Equal("\"[unparseable arguments]\"", arguments);
+        Assert.DoesNotContain("zq9secret", arguments);
     }
 
     // ---------------------------------------------------------------- exceptions, events

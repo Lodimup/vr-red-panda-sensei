@@ -14,8 +14,8 @@ namespace Sensei.Engine.Agent;
 /// S67: maps a provider failure to a turn error code by HTTP status, then by kind of failure.
 /// <para>
 /// The provider's exception is foreign input (S77, D2): the graph is walked iteratively with a visited set and at most
-/// <see cref="ExceptionSanitizer.MaxNodes"/> nodes, every property is read inside a guard, the status comes from properties and
-/// never from formatted text, and a <c>Message</c> is read only for the closed list of framework types whose message is a stored
+/// <see cref="ExceptionSanitizer.MaxNodes"/> nodes, every read is inside a guard, the status comes only from the public property of an exact
+/// <see cref="ClientResultException"/> (never from formatted text, reflection or a subclass), and a <c>Message</c> is read only for the closed list of framework types whose message is a stored
 /// string (<see cref="ExceptionSanitizer.Reason"/>). The detail is sanitized first and shortened after, so a cut can never leave the
 /// prefix of a secret behind.
 /// </para>
@@ -75,24 +75,26 @@ internal static class ProviderErrors
         return graph;
     }
 
-    /// <summary>Reads the status and the kind of failure one node stands for. Nothing it reads can throw out of here.</summary>
+    /// <summary>
+    /// Reads the status and the kind of failure one node stands for. The HTTP status is read from exactly one place: the public
+    /// <c>Status</c> of a node whose type is exactly <see cref="ClientResultException"/> (S132), which is what the OpenAI client raises
+    /// for every HTTP error response and which exists on every target. No member of any other exception is read: not a subclass of
+    /// that type, not <see cref="HttpRequestException"/> (whose <c>StatusCode</c> is not on netstandard2.1), nothing by reflection.
+    /// Everything else is classified by its type alone, which runs no foreign code.
+    /// </summary>
     private static void Observe(Exception node, Graph graph)
     {
         try
         {
-            if (node is ClientResultException client)
+            if (node.GetType() == typeof(ClientResultException))
             {
-                if (client.Status > 0) graph.Status ??= client.Status;
+                var status = ((ClientResultException)node).Status;
+                if (status > 0) graph.Status ??= status;
                 else graph.NetworkFailure = true;
                 return;
             }
-            if (node is HttpRequestException http)
-            {
-                graph.NetworkFailure = true;
-                if (ReadHttpRequestStatus(http) is { } code) graph.Status ??= code;
-                return;
-            }
-            if (node is SocketException || node is IOException || node is WebException || node is TimeoutException || node is OperationCanceledException)
+            if (node is HttpRequestException || node is SocketException || node is IOException || node is WebException
+                || node is TimeoutException || node is OperationCanceledException)
                 graph.NetworkFailure = true;
         }
         catch (Exception)
@@ -119,21 +121,6 @@ internal static class ProviderErrors
         {
             // An exception whose members throw contributes no children.
         }
-    }
-
-    // HttpRequestException.StatusCode is not in netstandard2.1; the host runtime may still provide it.
-    private static int? ReadHttpRequestStatus(HttpRequestException error)
-    {
-        try
-        {
-            var property = error.GetType().GetProperty("StatusCode");
-            if (property?.GetValue(error) is HttpStatusCode code && (int)code > 0) return (int)code;
-        }
-        catch (Exception)
-        {
-            // Not readable on this runtime: fall through to "no status".
-        }
-        return null;
     }
 
     /// <summary>The exception the detail is about: the root with single-member aggregates peeled off (bounded, cycle-safe).</summary>
