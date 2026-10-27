@@ -1,7 +1,14 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
+using Sensei.Engine.Events;
 using Sensei.Engine.Json;
+using Sensei.Engine.Learner;
+using Sensei.Engine.Speech;
+using Sensei.Engine.Text;
 
 namespace Sensei.Engine.Tools.Speech;
 
@@ -39,10 +46,10 @@ public sealed class ShowHintTool : SenseiTool<ShowHintArgs>
               "type": "object",
               "description": "What the card shows; at least one field.",
               "properties": {
-                "japanese": { "type": "string", "maxLength": 60, "description": "Japanese text, at most 60 characters." },
-                "reading": { "type": "string", "maxLength": 60, "description": "Kana reading, at most 60 characters." },
-                "romaji": { "type": "string", "maxLength": 80, "description": "Romaji, at most 80 characters." },
-                "english": { "type": "string", "maxLength": 160, "description": "English text, at most 160 characters." }
+                "japanese": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Japanese text, at most 60 characters." },
+                "reading": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Kana reading, at most 60 characters." },
+                "romaji": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Romaji, at most 80 characters." },
+                "english": { "type": "string", "minLength": 1, "maxLength": 160, "description": "English text, at most 160 characters." }
               },
               "additionalProperties": false
             },
@@ -56,6 +63,86 @@ public sealed class ShowHintTool : SenseiTool<ShowHintArgs>
 
     protected override JsonTypeInfo<ShowHintArgs> ArgsTypeInfo => SenseiJsonContext.Default.ShowHintArgs;
 
-    public override Task<ToolResult> ExecuteAsync(ShowHintArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+    /// <summary>S38a: at least one content field. S80: no mention of the hidden working level.</summary>
+    public override string? ValidateArguments(ShowHintArgs args)
+    {
+        var c = args.Content;
+        if (c.Japanese is null && c.Reading is null && c.Romaji is null && c.English is null)
+            return "content: at least one of japanese, reading, romaji, english is required";
+        if (HiddenLevelGuard.Check(c.Japanese) || HiddenLevelGuard.Check(c.Reading) || HiddenLevelGuard.Check(c.Romaji) || HiddenLevelGuard.Check(c.English))
+            return HiddenLevelGuard.Detail;
+        return null;
+    }
+
+    public override async Task<ToolResult> ExecuteAsync(ShowHintArgs args, ToolContext context, CancellationToken ct)
+    {
+        var c = args.Content;
+
+        // S38c: speak: true says `japanese` as a ja segment and `english` as an en segment, under the rules of S37.
+        List<SpeechSegment>? segments = null;
+        var characters = 0;
+        if (args.Speak)
+        {
+            segments = new List<SpeechSegment>();
+            if (c.Japanese is not null) segments.Add(new SpeechSegment(SpeechLanguages.Japanese, c.Japanese, c.Reading, c.Romaji, null));
+            if (c.English is not null) segments.Add(new SpeechSegment(SpeechLanguages.English, c.English, null, null, null));
+            if (segments.Count == 0) return context.Failure(ToolErrorCodes.InvalidArguments, "speak: needs content.japanese or content.english to say");
+            if (c.Japanese is not null && !TextRules.ContainsJapanese(c.Japanese) || c.English is not null && TextRules.ContainsJapanese(c.English))
+                return context.Failure(ToolErrorCodes.InvalidArguments, SpeechPresenter.SplitLanguageSegments);
+            characters = SpeechPresenter.CountCharacters(segments);
+        }
+
+        var card = new HintCard
+        {
+            Kind = args.Kind,
+            Japanese = c.Japanese,
+            Reading = c.Reading,
+            Romaji = c.Romaji,
+            English = c.English,
+            TargetKey = args.TargetKey,
+        };
+
+        SpeechPlan? plan = null;
+        var gate = context.Locked(() =>
+        {
+            // S37c
+            if (segments is not null && context.Turn.SpokenCharacters + characters > SpeechPresenter.MaxSpokenCharactersPerTurn)
+                return context.Failure(ToolErrorCodes.SpeechLimitExceeded,
+                    $"{characters} more characters would pass the {SpeechPresenter.MaxSpokenCharactersPerTurn} spoken per turn ({context.Turn.SpokenCharacters} already spoken)");
+
+            // S38b, S89: the hint is on its way to the learner, so its assistance is recorded now, whatever the speech does next.
+            var targets = SpeechPresenter.ActiveTaskTargets(context);
+            RecordAssistance(context, args, targets);
+            if (segments is not null)
+                plan = SpeechPresenter.Plan(context, segments, null, characters, targets, isReplay: false);
+            return context.Success();
+        });
+        if (gate.Status != ToolStatuses.Success) return gate;
+
+        context.Events.Hint(card.Clone());
+        var cardNode = ToolContext.ToNode(card, SenseiJsonContext.Default.HintCard);
+        if (plan is null)
+            return context.Success(null, ToolContext.ToData(new JsonObject { ["card"] = cardNode }));
+        return await SpeechPresenter.PresentAsync(context, plan, ct, cardNode).ConfigureAwait(false);
+    }
+
+    /// <summary>S38b: the kind (translation → translation_hint) for <c>target_key</c> if given, else every target of the active task. Under the lock.</summary>
+    private static void RecordAssistance(ToolContext context, ShowHintArgs args, IReadOnlyList<AidTarget> taskTargets)
+    {
+        var kind = args.Kind == "translation" ? AssistanceKinds.TranslationHint : args.Kind;
+        if (args.TargetKey is null)
+        {
+            foreach (var t in taskTargets) context.RecordAssistance(kind, t.Dimension, t.Key, t.TaskId);
+            return;
+        }
+
+        var named = taskTargets.Where(t => t.Key == args.TargetKey).ToList();
+        if (named.Count > 0)
+        {
+            foreach (var t in named) context.RecordAssistance(kind, t.Dimension, t.Key, t.TaskId);
+            return;
+        }
+        // Not a target of the active task: a key-only record matches every dimension of that key (S97).
+        context.RecordAssistance(kind, null, args.TargetKey, context.Tasks.Active?.TaskId);
+    }
 }

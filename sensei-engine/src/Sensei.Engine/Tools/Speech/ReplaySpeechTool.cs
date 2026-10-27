@@ -2,6 +2,7 @@ using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
+using Sensei.Engine.Speech;
 
 namespace Sensei.Engine.Tools.Speech;
 
@@ -32,6 +33,20 @@ public sealed class ReplaySpeechTool : SenseiTool<ReplaySpeechArgs>
 
     protected override JsonTypeInfo<ReplaySpeechArgs> ArgsTypeInfo => SenseiJsonContext.Default.ReplaySpeechArgs;
 
-    public override Task<ToolResult> ExecuteAsync(ReplaySpeechArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+    public override async Task<ToolResult> ExecuteAsync(ReplaySpeechArgs args, ToolContext context, CancellationToken ct)
+    {
+        SpeechPlan? plan = null;
+        var gate = context.Locked(() =>
+        {
+            var entry = args.UtteranceId is null ? context.SpeechHistory.Latest : context.SpeechHistory.Find(args.UtteranceId);
+            if (entry is null)
+                return context.Failure(ToolErrorCodes.NothingToReplay,
+                    args.UtteranceId is null ? "nothing has been said yet" : $"no utterance '{args.UtteranceId}' in the last {SpeechHistory.Capacity}");
+            // S39: a replay is not counted against the 480 spoken characters of the turn.
+            plan = SpeechPresenter.Plan(context, entry.Segments, args.Pace, 0, SpeechPresenter.ActiveTaskTargets(context), isReplay: true);
+            return context.Success();
+        });
+        if (plan is null) return gate;
+        return await SpeechPresenter.PresentAsync(context, plan, ct).ConfigureAwait(false);
+    }
 }
