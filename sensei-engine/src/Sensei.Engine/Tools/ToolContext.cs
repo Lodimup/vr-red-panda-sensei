@@ -155,6 +155,9 @@ public sealed class ToolContext
         foreach (var t in task.SkillTargets) RecordAssistance(kind, t.Dimension, t.Key, task.TaskId);
     }
 
+    /// <summary>Queues <paramref name="raise"/> to run after this call has settled (its final cancellation check passed), outside the lock (S22, S69). Call under <see cref="Sync"/>, only on a committing call.</summary>
+    public void QueueAfterCommit(Action raise) => _core.QueueNotification(raise);
+
     /// <summary>Queues <c>OnSupportChanged</c> with the current settings (raised after the call). Under <see cref="Sync"/>.</summary>
     public void QueueSupportChanged() => _core.QueueSupportChanged();
 

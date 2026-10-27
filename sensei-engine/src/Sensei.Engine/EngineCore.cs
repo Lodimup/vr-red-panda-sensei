@@ -264,6 +264,9 @@ internal sealed class EngineCore
         foreach (var raise in pending) raise();
     }
 
+    /// <summary>Queues a notification raised by the current operation's <see cref="FlushNotifications"/>, after its final settlement and outside the lock (S69). Call under the lock, after the change committed.</summary>
+    public void QueueNotification(Action raise) => Enqueue(raise);
+
     private void Enqueue(Action raise) => (_scope.Value?.Items ?? _unscoped).Add(raise);
 
     /// <summary>One operation's pending notifications.</summary>
