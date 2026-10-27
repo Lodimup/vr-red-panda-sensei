@@ -1,8 +1,11 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
+using Sensei.Engine.Catalog;
 using Sensei.Engine.Json;
+using Sensei.Engine.World;
 
 namespace Sensei.Engine.Tools.World;
 
@@ -23,6 +26,9 @@ public sealed class SpawnObjectsArgs
 /// <summary><c>spawn_objects</c> (S30): creates catalog objects in the practice area.</summary>
 public sealed class SpawnObjectsTool : SenseiTool<SpawnObjectsArgs>
 {
+    private const int DefaultQuantity = 1;
+    private const int MaxTotalQuantity = 6;
+
     public override string Name => "spawn_objects";
 
     public override string Description => "Place catalog objects into the practice area or beside Sensei; new objects can be referenced from the next model round on.";
@@ -57,6 +63,33 @@ public sealed class SpawnObjectsTool : SenseiTool<SpawnObjectsArgs>
 
     protected override JsonTypeInfo<SpawnObjectsArgs> ArgsTypeInfo => SenseiJsonContext.Default.SpawnObjectsArgs;
 
+    /// <summary>Total quantity of the call, with the default of 1 for an omitted quantity (S30a).</summary>
+    private static int TotalQuantity(SpawnObjectsArgs args) => args.Objects.Sum(o => o.Quantity ?? DefaultQuantity);
+
+    public override string? ValidateArguments(SpawnObjectsArgs args) =>
+        TotalQuantity(args) > MaxTotalQuantity ? $"objects: total quantity must be at most {MaxTotalQuantity}" : null;
+
     public override Task<ToolResult> ExecuteAsync(SpawnObjectsArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+        Task.FromResult(context.Locked(() =>
+        {
+            for (var i = 0; i < args.Objects.Count; i++)
+            {
+                if (!ObjectCatalog.Contains(args.Objects[i].CatalogId))
+                    return context.Failure(ToolErrorCodes.UnknownCatalogId, $"objects[{i}].catalog_id: unknown catalog id '{args.Objects[i].CatalogId}'");
+            }
+
+            var total = TotalQuantity(args);
+            if (context.World.Count + total > SceneWorld.Capacity)
+                return context.Failure(ToolErrorCodes.CapacityExceeded, $"the scene holds at most {SceneWorld.Capacity} objects; it has {context.World.Count} and the call adds {total}");
+
+            var requests = new List<SpawnRequest>();
+            foreach (var entry in args.Objects)
+            {
+                var region = entry.Region ?? SceneRegions.Center;
+                for (var n = 0; n < (entry.Quantity ?? DefaultQuantity); n++) requests.Add(new SpawnRequest(entry.CatalogId, region));
+            }
+
+            var committed = context.World.CommitSpawn(requests, SceneActors.Sensei, context.TurnId);
+            return context.Success(committed.InstanceIds);
+        }));
 }
