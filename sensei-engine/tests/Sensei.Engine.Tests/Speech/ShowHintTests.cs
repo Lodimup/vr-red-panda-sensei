@@ -54,11 +54,10 @@ public sealed class ShowHintTests
     [InlineData("reading")]
     [InlineData("romaji")]
     [InlineData("english")]
-    public async Task S38a_an_empty_string_field_is_invalid_arguments(string field)
+    public async Task S38a_S123_a_card_whose_only_field_is_empty_is_invalid_arguments(string field)
     {
         await using var t = await NewAsync();
-        var content = Content(english: "water");
-        content[field] = "";
+        var content = new System.Text.Json.Nodes.JsonObject { [field] = "" };
         Assert.Equal(ToolErrorCodes.InvalidArguments, (await Hint(t, "translation", content)).ErrorCode);
         Assert.Empty(t.Events.Hints);
     }

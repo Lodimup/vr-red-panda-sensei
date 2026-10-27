@@ -46,10 +46,10 @@ public sealed class ShowHintTool : SenseiTool<ShowHintArgs>
               "type": "object",
               "description": "What the card shows; at least one field.",
               "properties": {
-                "japanese": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Japanese text, at most 60 characters." },
-                "reading": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Kana reading, at most 60 characters." },
-                "romaji": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Romaji, at most 80 characters." },
-                "english": { "type": "string", "minLength": 1, "maxLength": 160, "description": "English text, at most 160 characters." }
+                "japanese": { "type": "string", "maxLength": 60, "description": "Japanese text, at most 60 characters." },
+                "reading": { "type": "string", "maxLength": 60, "description": "Kana reading, at most 60 characters." },
+                "romaji": { "type": "string", "maxLength": 80, "description": "Romaji, at most 80 characters." },
+                "english": { "type": "string", "maxLength": 160, "description": "English text, at most 160 characters." }
               },
               "additionalProperties": false
             },
@@ -63,20 +63,29 @@ public sealed class ShowHintTool : SenseiTool<ShowHintArgs>
 
     protected override JsonTypeInfo<ShowHintArgs> ArgsTypeInfo => SenseiJsonContext.Default.ShowHintArgs;
 
-    /// <summary>S38a: at least one content field. S80: no mention of the hidden working level.</summary>
+    /// <summary>S38a, S123: at least one non-empty content field. S80: no mention of the hidden working level.</summary>
     public override string? ValidateArguments(ShowHintArgs args)
     {
         var c = args.Content;
-        if (c.Japanese is null && c.Reading is null && c.Romaji is null && c.English is null)
+        if (string.IsNullOrEmpty(c.Japanese) && string.IsNullOrEmpty(c.Reading) && string.IsNullOrEmpty(c.Romaji) && string.IsNullOrEmpty(c.English))
             return "content: at least one of japanese, reading, romaji, english is required";
         if (HiddenLevelGuard.Check(c.Japanese) || HiddenLevelGuard.Check(c.Reading) || HiddenLevelGuard.Check(c.Romaji) || HiddenLevelGuard.Check(c.English))
             return HiddenLevelGuard.Detail;
         return null;
     }
 
+    /// <summary>S123: an empty content string is an absent field.</summary>
+    private static ShowHintContent Present(ShowHintContent c) => new()
+    {
+        Japanese = string.IsNullOrEmpty(c.Japanese) ? null : c.Japanese,
+        Reading = string.IsNullOrEmpty(c.Reading) ? null : c.Reading,
+        Romaji = string.IsNullOrEmpty(c.Romaji) ? null : c.Romaji,
+        English = string.IsNullOrEmpty(c.English) ? null : c.English,
+    };
+
     public override async Task<ToolResult> ExecuteAsync(ShowHintArgs args, ToolContext context, CancellationToken ct)
     {
-        var c = args.Content;
+        var c = Present(args.Content);
 
         // S38c: speak: true says `japanese` as a ja segment and `english` as an en segment, under the rules of S37.
         List<SpeechSegment>? segments = null;
