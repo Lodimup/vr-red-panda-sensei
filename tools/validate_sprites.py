@@ -18,9 +18,10 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent / "assets" / "sprites" / "objects"
+# RULING(Handler 2026-10-28): one image per object, no colour variants.
 NAMES = {
-    "water", "tea", "cup_blue", "cup_red", "apple", "banana", "rice_ball",
-    "book_green", "book_yellow", "pen", "bag", "box", "key", "umbrella",
+    "water", "tea", "cup", "apple", "banana", "rice_ball",
+    "book", "pen", "bag", "box", "key", "umbrella",
 }
 SIZE = (1024, 1024)
 

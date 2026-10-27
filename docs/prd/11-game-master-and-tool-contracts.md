@@ -9,7 +9,7 @@ Every Sensei-directed effect uses a registered tool, including speech and charac
 | **Record** | **Required fields** |
 | --- | --- |
 | LearnerProfile | Version; starting preference; help language; text visibility; correction style; skill evidence; review queue; recent goals. |
-| ObjectInstance | Instance ID; catalog ID; approved variant; pose relative to practice area; container ID; selectable state. |
+| ObjectInstance | Instance ID; catalog ID; pose relative to practice area; container ID; selectable state. |
 | TaskSpec | Task ID; activity family; skill targets; source scene revision; existing object IDs; instruction; bounded success predicates; assistance baseline. |
 | ToolCallEnvelope | Provider tool-call ID; registered name; typed arguments; local session, turn, and generation IDs; expected revision; idempotency key; actor. |
 | ToolResult | Call ID; success, failure, or cancelled status; actual affected IDs; resulting revision; relevant events; error code and corrective detail when needed. |
@@ -23,7 +23,7 @@ Tool names below are the implementation contract. Each has a concrete C# argumen
 | **Tool** | **What happens in the game** | **Validation or result** |
 | --- | --- | --- |
 | inspect_scene | Read the current objects, selection, active task, and assistance state. | Return authoritative IDs and revision; no mutation. |
-| spawn_objects | Place one or more pre-rendered catalog objects in the practice area. | Validate catalog, variants, capacity, and bounds; return engine-assigned instance IDs. |
+| spawn_objects | Place one or more pre-rendered catalog objects in the practice area. | Validate catalog, capacity, and bounds; return engine-assigned instance IDs. |
 | move_object | Move, hand over, or place an existing object in a declared container or region. | Validate object and destination; return the completed position and actor. |
 | remove_objects | Clear specified objects to prepare another activity. | Reject removal that silently invalidates an active task; return removed IDs. |
 | highlight_objects | Point out specified objects with an approved visual cue. | Validate IDs and duration; record assistance when the cue supplies a target answer. |
