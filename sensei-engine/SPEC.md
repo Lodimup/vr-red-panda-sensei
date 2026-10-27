@@ -108,7 +108,7 @@ public sealed class SenseiEngine : IAsyncDisposable {
 | key | 鍵 | かぎ | kagi | key | default | no |
 | umbrella | 傘 | かさ | kasa | umbrella | default | no |
 
-- **S11** The catalog has exactly these 12 entries. The first listed variant is the default. Sprites are 32×32 (PRD §7); the engine stores only ids.
+- **S11** The catalog has exactly these 12 entries. The first listed variant is the default. Object images are realistic high-resolution cardboard cutouts (PRD §7, RULING(Handler 2026-10-27)); the engine stores only ids.
 
 ## 5 Scene
 
