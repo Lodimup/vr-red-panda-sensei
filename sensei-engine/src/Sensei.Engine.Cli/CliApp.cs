@@ -375,13 +375,10 @@ internal sealed class CliApp
     {
         var scene = _engine.GetScene();
         _output.Line($"Scene rev {scene.Revision}, selected: {scene.SelectedId ?? "none"}");
+        _output.Line("id | catalog | region | slot | in | japanese | reading | english");
         if (scene.Instances.Count == 0) _output.Line("(the room is empty)");
-        else
-        {
-            _output.Line("id | catalog | region | slot | in | japanese | reading | english");
-            foreach (var i in scene.Instances)
-                _output.Line($"{i.Id} | {i.CatalogId} | {i.Region} | {i.Slot} | {i.ContainerId ?? "-"} | {i.Japanese} | {i.Reading} | {i.English}");
-        }
+        foreach (var i in scene.Instances)
+            _output.Line($"{i.Id} | {i.CatalogId} | {i.Region} | {i.Slot} | {i.ContainerId ?? "-"} | {i.Japanese} | {i.Reading} | {i.English}");
         if (scene.ActiveTask is { } task)
         {
             var instruction = task.Instruction.English ?? task.Instruction.Japanese ?? "";

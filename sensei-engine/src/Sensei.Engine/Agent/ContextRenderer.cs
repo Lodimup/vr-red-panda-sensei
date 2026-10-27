@@ -87,16 +87,21 @@ internal sealed class ContextRenderer
     }
 
     /// <summary>
-    /// S76: the user message of the turn — one delimited block holding the transcript, the correction note, the interruption
-    /// note, the player's events since the previous turn and, when <paramref name="includeCurrent"/>, the saved notes and the
-    /// current task and target text. The persisted copy leaves those out so history does not repeat them every turn.
+    /// S129: the copy of the learner message that goes into history — the transcript inside the data tags and nothing else.
+    /// Everything else in <see cref="RenderLearnerMessage"/> is rebuilt for each request and never persisted.
     /// </summary>
-    public string RenderLearnerMessage(TurnScope scope, bool includeCurrent)
+    public string RenderStoredLearnerMessage(TurnScope scope) =>
+        WrapBlock(new[] { $"learner_transcript: {Safe(scope.Request.Transcript)}" });
+
+    /// <summary>
+    /// S76: the user message of one request — one delimited block holding the transcript, the correction note, the interruption
+    /// note, the player's events since the previous turn, the saved notes and the current task and target text. It is built
+    /// for the request only; history keeps <see cref="RenderStoredLearnerMessage"/> (S129).
+    /// </summary>
+    public string RenderLearnerMessage(TurnScope scope)
     {
         var request = scope.Request;
         var lines = new List<string>();
-        var secrets = _core.Secrets;
-
         if (request.CorrectedFrom is not null)
         {
             lines.Add($"transcript_correction: the previous learner transcript was corrected from \"{Safe(request.CorrectedFrom)}\" to \"{Safe(request.Transcript)}\"; the corrected text is what the learner said");
@@ -119,17 +124,14 @@ internal sealed class ContextRenderer
                 .Where(e => e.Actor == SceneActors.Player)
                 .Select(e => JsonSerializer.Serialize(e, SenseiJsonContext.Default.SceneEvent))
                 .ToList();
-            if (includeCurrent)
-            {
-                var profile = _core.Learner.Profile;
-                notes = new Dictionary<string, string>(profile.Notes);
-                if (_core.Tasks.Active is { } active) task = JsonSerializer.Serialize(active, SenseiJsonContext.Default.TaskView);
-                recommendations = EvidenceRules.ComputeRecommendations(profile.Evidence)
-                    .Select(r => $"{{\"key\":{Quote(r.Key)},\"dimension\":{Quote(r.Dimension)},\"kind\":{Quote(r.Kind)}}}").ToList();
-                reviewDue = EvidenceRules.ComputeReviewDue(profile.Evidence, _core.SessionId)
-                    .Select(d => $"{{\"key\":{Quote(d.Key)},\"dimension\":{Quote(d.Dimension)}}}").ToList();
-                scope.ShownEventsUpTo = _core.World.LastEventId;
-            }
+            var profile = _core.Learner.Profile;
+            notes = new Dictionary<string, string>(profile.Notes);
+            if (_core.Tasks.Active is { } active) task = JsonSerializer.Serialize(active, SenseiJsonContext.Default.TaskView);
+            recommendations = EvidenceRules.ComputeRecommendations(profile.Evidence)
+                .Select(r => $"{{\"key\":{Quote(r.Key)},\"dimension\":{Quote(r.Dimension)},\"kind\":{Quote(r.Kind)}}}").ToList();
+            reviewDue = EvidenceRules.ComputeReviewDue(profile.Evidence, _core.SessionId)
+                .Select(d => $"{{\"key\":{Quote(d.Key)},\"dimension\":{Quote(d.Dimension)}}}").ToList();
+            scope.ShownEventsUpTo = _core.World.LastEventId;
         }
         if (events.Count > 0)
         {
@@ -146,13 +148,18 @@ internal sealed class ContextRenderer
         if (recommendations is { Count: > 0 }) lines.Add("recommendations (targets named by Sensei earlier): [" + Safe(string.Join(",", recommendations)) + "]");
         if (reviewDue is { Count: > 0 }) lines.Add("review_due (targets named by Sensei earlier): [" + Safe(string.Join(",", reviewDue)) + "]");
 
+        return WrapBlock(lines);
+    }
+
+    private string Safe(string text) => Neutralize(_core.Secrets.Sanitize(text) ?? "");
+
+    private static string WrapBlock(IEnumerable<string> lines)
+    {
         var sb = new StringBuilder();
         sb.Append('<').Append(SystemPrompt.LearnerDataTag).Append(">\n");
         foreach (var line in lines) sb.Append(line).Append('\n');
         sb.Append("</").Append(SystemPrompt.LearnerDataTag).Append('>');
         return sb.ToString();
-
-        string Safe(string text) => Neutralize(secrets.Sanitize(text) ?? "");
     }
 
     private static string Quote(string text) => JsonSerializer.Serialize(text, SenseiJsonContext.Default.String);

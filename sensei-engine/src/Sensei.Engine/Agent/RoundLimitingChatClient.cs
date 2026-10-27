@@ -77,7 +77,7 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         foreach (var update in response.ToChatResponseUpdates()) yield return update;
     }
 
-    /// <summary>S63: fresh instructions and the full learner block (with notes) for this request; the stored copy stays compact.</summary>
+    /// <summary>S63: fresh instructions and the full learner block for this request; history keeps only the transcript (S129).</summary>
     private (List<ChatMessage> Messages, ChatOptions Options) Prepare(IEnumerable<ChatMessage> messages, ChatOptions? options, TurnScope scope)
     {
         // S77: the copy that leaves the engine is sanitized as a whole; the stored history is not touched.
@@ -85,7 +85,7 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         var prepared = options?.Clone() ?? new ChatOptions();
         prepared.Instructions = _core.Secrets.Sanitize(_renderer.RenderInstructions(scope));
 
-        var learnerMessage = new ChatMessage(ChatRole.User, _renderer.RenderLearnerMessage(scope, includeCurrent: true));
+        var learnerMessage = new ChatMessage(ChatRole.User, _renderer.RenderLearnerMessage(scope));
         var index = list.FindLastIndex(m => m.Role == ChatRole.User);
         if (index >= 0) list[index] = learnerMessage;
         else list.Add(learnerMessage);
