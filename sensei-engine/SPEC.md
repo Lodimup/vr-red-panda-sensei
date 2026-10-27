@@ -425,6 +425,11 @@ These stories were added after an adversarial review of this spec. **Where one o
 
 - **S111** The system prompt also states PRD §5's feedback contract: minor errors wait until the end of a fluent turn unless the learner asked for detailed correction; meaning-blocking problems get a clarifying question first; an ambiguous transcript is confirmed before any language error is recorded; speech-recognition errors are never pronunciation evidence; feedback quotes the learner's actual words.
 
+### Defaults (acceptance review)
+
+- **S112** Every tool's `AIFunction.Description` is a non-empty sentence telling the model what the tool does in the game; every property in each tool's JSON schema has a non-empty `description`.
+- **S113** Omitted optional booleans default to `false` (`is_fresh_variation` in `start_challenge` and `record_attempt`, `speak` in `show_hint`). Omitted optional arrays default to empty (`scenario_properties`, `event_ids`). Omitted optional strings default to null and are omitted from results.
+
 ## Decisions (differences from the PRD)
 
 1. The LLM loop uses Microsoft Agent Framework 1.26.0 in a separate `sensei-engine` library (Handler, 2026-10-27), not the RageAgainstThePixel package named in PRD §10. Quest IL2CPP compatibility is still to be proven on a device (PRD A20); S3 keeps the code AOT-friendly. RULING(Handler 2026-10-27)
