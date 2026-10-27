@@ -21,6 +21,7 @@ internal sealed class EvalSummary
     public int BudgetExhaustedTurns { get; set; }
     public int TurnsWithDuplicateLines { get; set; }
     public int DuplicateLinesTotal { get; set; }
+    public int TurnsWithNearDuplicateLines { get; set; }
     public int AttemptTurns { get; set; }
     public int AttemptTurnsWithRecordAttempt { get; set; }
     public double RecordAttemptRate { get; set; }
@@ -65,6 +66,7 @@ internal sealed class EvalSummary
             BudgetExhaustedTurns = turns.Count(t => t.Status == TurnStatuses.BudgetExhausted),
             TurnsWithDuplicateLines = turns.Count(t => t.DuplicateSpokenLines > 0),
             DuplicateLinesTotal = turns.Sum(t => t.DuplicateSpokenLines),
+            TurnsWithNearDuplicateLines = turns.Count(t => t.NearDuplicateSpokenLines > 0),
             AttemptTurns = attempts.Count,
             AttemptTurnsWithRecordAttempt = attempts.Count(t => t.RecordAttemptCalls > 0),
             TotalRecordAttemptCalls = turns.Sum(t => t.RecordAttemptCalls),

@@ -28,6 +28,9 @@ internal sealed class TurnRecord
     public int Utterances { get; set; }
     public List<string> Spoken { get; set; } = new();
     public int DuplicateSpokenLines { get; set; }
+
+    /// <summary>Spoken segments that are almost a line already spoken this turn (bigram Dice >= 0.8, at least 8 characters). Information only; the target counts exact repeats.</summary>
+    public int NearDuplicateSpokenLines { get; set; }
     public int RecordAttemptCalls { get; set; }
     public int RecordAttemptSuccess { get; set; }
     public int FailedCalls { get; set; }
@@ -125,7 +128,7 @@ internal static class ConversationRunner
             if (result.ErrorCode is not null) log.Line($"error: {result.ErrorCode}: {Clip(result.ErrorDetail ?? "", 300)}");
             log.Line("[model] " + string.Join(", ", requests.Select(r => $"{r.Ms} ms in={r.InputTokens} out={r.OutputTokens} reasoning={r.ReasoningTokens} cost={r.CostUsd?.ToString("0.000000", CultureInfo.InvariantCulture)}")));
             var first = row.FirstSpeakMs is { } f ? $"first speak {f} ms" : "no speech";
-            log.Line($"Sensei: {Describe(result.Status)} (turn {result.TurnId}: {result.Status}, {result.Rounds} rounds, {result.ToolCalls.Count} tools, {row.WallMs} ms; {first}; speak calls {row.SpeakCalls}; duplicate lines {row.DuplicateSpokenLines}; record_attempt {row.RecordAttemptSuccess}/{row.RecordAttemptCalls}; cost {FormatCost(row)})");
+            log.Line($"Sensei: {Describe(result.Status)} (turn {result.TurnId}: {result.Status}, {result.Rounds} rounds, {result.ToolCalls.Count} tools, {row.WallMs} ms; {first}; speak calls {row.SpeakCalls}; duplicate lines {row.DuplicateSpokenLines} (near {row.NearDuplicateSpokenLines}); record_attempt {row.RecordAttemptSuccess}/{row.RecordAttemptCalls}; cost {FormatCost(row)})");
             if (result.Status == TurnStatuses.Failed && result.ErrorCode is TurnErrorCodes.AuthFailed or TurnErrorCodes.QuotaExceeded) break;
         }
 
@@ -170,6 +173,7 @@ internal static class ConversationRunner
         }
         row.Spoken = probe.SpokenSegments.Select(s => $"[{s.Lang}] {s.Text}").ToList();
         row.DuplicateSpokenLines = CountDuplicates(probe.SpokenSegments.Select(s => s.Lang + "|" + SpokenLines.Normalize(s.Text)));
+        row.NearDuplicateSpokenLines = SpokenLines.CountNearDuplicates(probe.SpokenSegments.Select(s => (s.Lang, SpokenLines.Normalize(s.Text))).ToList());
         return row;
     }
 
@@ -245,6 +249,48 @@ internal static class ConversationRunner
 /// <summary>Normalization that makes two spellings of the same spoken line equal.</summary>
 internal static class SpokenLines
 {
+    /// <summary>Segments (later in the turn) that are not equal but almost equal to an earlier segment of the same language.</summary>
+    public static int CountNearDuplicates(IReadOnlyList<(string Lang, string Text)> segments)
+    {
+        var count = 0;
+        for (var i = 1; i < segments.Count; i++)
+        {
+            for (var j = 0; j < i; j++)
+            {
+                var a = segments[j];
+                var b = segments[i];
+                if (a.Lang != b.Lang || a.Text == b.Text || a.Text.Length < 8 || b.Text.Length < 8) continue;
+                if (Dice(a.Text, b.Text) >= 0.8)
+                {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static double Dice(string a, string b)
+    {
+        var left = Bigrams(a);
+        var right = Bigrams(b);
+        var shared = 0;
+        foreach (var pair in left)
+            if (right.TryGetValue(pair.Key, out var other)) shared += Math.Min(pair.Value, other);
+        return 2.0 * shared / (left.Values.Sum() + right.Values.Sum());
+    }
+
+    private static Dictionary<string, int> Bigrams(string text)
+    {
+        var map = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i + 1 < text.Length; i++)
+        {
+            var key = text.Substring(i, 2);
+            map[key] = map.TryGetValue(key, out var n) ? n + 1 : 1;
+        }
+        return map;
+    }
+
     /// <summary>NFKC, lower case, and only letters and digits kept: punctuation, spacing and a trailing "!" do not make a line new.</summary>
     public static string Normalize(string text)
     {
