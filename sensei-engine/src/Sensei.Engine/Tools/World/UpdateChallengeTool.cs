@@ -95,5 +95,14 @@ public sealed class UpdateChallengeTool : SenseiTool<UpdateChallengeArgs>
     public override IEnumerable<string> ReferencedInstanceIds(UpdateChallengeArgs args) => TaskValidator.ReferencedIds(args.Predicates);
 
     public override Task<ToolResult> ExecuteAsync(UpdateChallengeArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+        Task.FromResult(context.Locked(() =>
+        {
+            var failure = context.Tasks.ValidateUpdate(args.TaskId, args.Action, args.Instruction, args.Predicates);
+            if (failure is not null) return context.Failure(failure);
+
+            var task = args.Action == "revise"
+                ? context.Tasks.CommitRevise(args.Instruction, args.Predicates, context.TurnId)
+                : context.Tasks.CommitAbandon(context.TurnId);
+            return context.Success(null, ToolContext.ToData(task, SenseiJsonContext.Default.TaskView));
+        }));
 }

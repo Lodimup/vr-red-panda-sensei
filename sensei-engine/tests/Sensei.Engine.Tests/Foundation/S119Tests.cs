@@ -65,7 +65,7 @@ public sealed class S119Tests
         Assert.Equal("objects[0].variant: unknown property", r.Detail);
         t.Engine.BeginTurn("y");
         var plain = await t.CallAsync("spawn_objects", """{"objects":[{"catalog_id":"cup"}]}""");
-        Assert.Equal(ToolDetails.NotImplemented, plain.Detail);
+        Assert.True(plain.IsSuccess);
     }
 
     [Fact]
