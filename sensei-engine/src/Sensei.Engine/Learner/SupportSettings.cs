@@ -1,18 +1,32 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace Sensei.Engine.Learner;
 
 /// <summary>Support settings (SPEC §9). Defaults are the <c>zero</c> band row, pace normal, light corrections.</summary>
 public sealed class SupportSettings
 {
+    [JsonRequired]
     public bool ShowJapanese { get; set; } = true;
+
+    [JsonRequired]
     public bool ShowReading { get; set; } = true;
+
+    [JsonRequired]
     public bool ShowRomaji { get; set; } = true;
+
+    [JsonRequired]
     public bool ShowTranslation { get; set; } = true;
+
+    [JsonRequired]
     public string Pace { get; set; } = SupportValues.PaceNormal;
+
+    [JsonRequired]
     public string CorrectionStyle { get; set; } = SupportValues.CorrectionLight;
+
+    [JsonRequired]
     public string LanguageMode { get; set; } = SupportValues.LanguageEnglishExplanations;
 
     public SupportSettings Clone() => (SupportSettings)MemberwiseClone();

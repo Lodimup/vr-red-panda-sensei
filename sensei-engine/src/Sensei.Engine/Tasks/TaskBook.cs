@@ -198,6 +198,8 @@ public sealed class TaskBook
         if (task is null || !PredicateEvaluator.AllTrue(task, World)) return;
         task.Status = TaskStatuses.Completed;
         task.CompletedBy = trigger.Actor;
+        // S35d: the call whose body committed the completing change is the one that reports it.
+        if (trigger.Actor == SceneActors.Sensei) _core.ActiveContext?.NoteTaskCompleted();
         task.CompletedEventId = trigger.EventId;
         task.ClosedTurnId = _core.CurrentTurnId;
         World.AppendTaskEvent(SceneEventKinds.TaskCompleted, task.TaskId, trigger.Actor, trigger.TurnId);

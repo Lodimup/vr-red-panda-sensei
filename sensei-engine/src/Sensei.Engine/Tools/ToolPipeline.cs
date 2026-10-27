@@ -77,6 +77,8 @@ internal sealed class ToolPipeline
             }
             catch (Exception ex)
             {
+                // S77: what leaves the engine, to this caller and to any duplicate awaiting it, carries no known secret.
+                var safe = ExceptionSanitizer.Sanitize(ex, _core.Secrets);
                 lock (_core.Sync)
                 {
                     var failed = call.Context!.Failure(ToolErrorCodes.InternalError, ex.GetType().Name);
@@ -84,21 +86,33 @@ internal sealed class ToolPipeline
                     if (call.InFlight is not null)
                     {
                         _inFlight.Remove(call.InFlight.Key);
-                        call.InFlight.Completion.TrySetException(ex);
+                        call.InFlight.Completion.TrySetException(safe);
                     }
                 }
                 WritePendingTraces(call);
                 _core.FlushNotifications();
-                throw;
+                if (ReferenceEquals(safe, ex)) throw;
+                throw safe;
             }
         }
 
         lock (_core.Sync)
         {
-            if (result.Status == ToolStatuses.Success && CompletedBySenseiSince(call.EventMark))
-                result.Data = WithTaskStatus(result.Data);
-            if (result.Status == ToolStatuses.Success && call.Context!.EndsGeneration)
-                _core.EndGeneration(call.GenerationId);
+            if (result.Status != ToolStatuses.Cancelled && call.GenerationId != _core.CurrentGeneration)
+            {
+                // S27, S87: work whose generation ended (cancelled, reset or ended) while it ran settles as cancelled,
+                // whatever its body returned. The generation is rechecked here, under the lock, because the body may
+                // have finished its checks before the generation ended and only its result arrived late.
+                result = call.Context!.Cancelled();
+            }
+            else
+            {
+                // S35d: only the call that itself completed the task reports it, not every call overlapping the event.
+                if (result.Status == ToolStatuses.Success && call.Context!.CompletedTask)
+                    result.Data = WithTaskStatus(result.Data);
+                if (result.Status == ToolStatuses.Success && call.Context!.EndsGeneration)
+                    _core.EndGeneration(call.GenerationId);
+            }
             result = Finish(call, result, stopwatch, cache: true, countFailure: true);
         }
         WritePendingTraces(call);
@@ -140,11 +154,10 @@ internal sealed class ToolPipeline
             ArgumentsJson = argumentsJson ?? "",
             Turn = turn,
             GenerationId = generation,
-            EventMark = _core.World.LastEventId,
         };
 
-        // 1. generation cancelled (S27, S82, S87)
-        if ((generationId.HasValue && generationId.Value != current) || (turn is not null && turn.GenerationId != current))
+        // 1. generation cancelled (S27, S82, S87): an older explicit generation, or the caller's own generation (the last BeginTurn's, 0 before any turn) no longer current
+        if ((generationId.HasValue && generationId.Value != current) || _core.CallerGeneration != current)
         {
             call.CallId = callId ?? NextAutoId();
             return Done(call, Cancelled(), stopwatch, cache: false, countFailure: false);
@@ -329,7 +342,7 @@ internal sealed class ToolPipeline
     /// <summary>Sanitized arguments text: values and names cleaned when it parses (duplicates kept), else the raw text redacted.</summary>
     private string SanitizeJsonText(string json)
     {
-        if (!string.IsNullOrWhiteSpace(json) && ArgumentSchema.TryParse(json, out var element)) return SanitizedJson(element);
+        if (ArgumentSchema.TryParse(json, out var element)) return SanitizedJson(element);
         return _core.Secrets.Sanitize(json) ?? "";
     }
 
@@ -372,9 +385,6 @@ internal sealed class ToolPipeline
         }
     }
 
-    private bool CompletedBySenseiSince(long eventMark) =>
-        _core.World.EventsAfter(eventMark).Any(e => e.Kind == SceneEventKinds.TaskCompleted && e.Actor == SceneActors.Sensei);
-
     private static JsonElement WithTaskStatus(JsonElement? data)
     {
         JsonObject obj;
@@ -405,7 +415,6 @@ internal sealed class ToolPipeline
         public string CallId = "";
         public TurnState? Turn;
         public long GenerationId;
-        public long EventMark;
         public bool CacheThis;
         public SenseiTool? Tool;
         public object? Arguments;

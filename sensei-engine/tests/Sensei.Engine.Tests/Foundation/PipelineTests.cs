@@ -363,11 +363,11 @@ public sealed class PipelineTests
     }
 
     [Fact]
-    public async Task S21_blank_arguments_are_an_empty_object()
+    public async Task S21_an_empty_object_is_valid_json_and_names_the_missing_property()
     {
         await using var t = await NewAsync();
         t.Engine.BeginTurn("x");
-        var r = await t.CallAsync("test_probe", "");
+        var r = await t.CallAsync("test_probe", "{}");
         Assert.Equal(ToolErrorCodes.InvalidArguments, r.ErrorCode);
         Assert.Contains("action", r.Detail);
     }
