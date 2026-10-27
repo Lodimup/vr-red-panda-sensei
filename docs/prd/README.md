@@ -4,7 +4,7 @@
 
 Version 1.2 \| 26 October 2026 \| Meta AI Developer Hackathon
 
-**Build decision.** We are building a single-player Meta Quest experience in which a ghost red panda Sensei teaches Japanese through genuine spoken conversation and interactive flat pixel objects placed in the learner's real surroundings. It starts at zero knowledge and adapts through advanced conversation. This document defines the product, one-sentence user stories, technical contracts, acceptance criteria, and the hackathon delivery plan.
+**Build decision.** We are building a single-player Meta Quest experience in which a ghost red panda Sensei teaches Japanese through genuine spoken conversation and interactive flat cardboard-cutout objects placed in the learner's real surroundings. It starts at zero knowledge and adapts through advanced conversation. This document defines the product, one-sentence user stories, technical contracts, acceptance criteria, and the hackathon delivery plan.
 
 **One Meta key and local speech synthesis.** The Quest app calls Meta directly for recognition and LLM reasoning using the player's key. Sensei's spoken replies are synthesized on the headset; Supertonic 3 INT8 through sherpa-onnx is the preferred baseline, with KittenTTS alternatives documented in Section 10. Conversation context, the C# agent loop, tool validation, game state, and learner progress also live in the app. We operate no application backend or speech server. The selected local synthesis route must pass the day-one Quest performance and pronunciation gate.
 
