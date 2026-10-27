@@ -454,6 +454,8 @@ These stories were added after an adversarial review of this spec. **Where one o
 
 - **S125** (S4, S61) `SENSEI_LLM_REASONING_EFFORT` (`none`, `low`, `medium`, `high`; default `low`) sets the model's reasoning effort on every request (OpenRouter `reasoning.effort`); `LlmSettings` carries it and `ToString()` shows it. `SENSEI_LLM_MAX_OUTPUT_TOKENS` (default 2000) bounds each response. Unknown values → `LlmConfigurationException`.
 
+- **S126** (S5, S77, S79) Exact-value redaction (known secrets, the configured API key) applies only to values of 8 or more characters; shorter values are never searched for inside other text (they would mangle ordinary words and model names). `LlmSettings.ToString()` still never prints the key itself (it prints `api_key=[set]`), whatever its length.
+
 ## Decisions (differences from the PRD)
 
 1. The LLM loop uses Microsoft Agent Framework 1.26.0 in a separate `sensei-engine` library (Handler, 2026-10-27), not the RageAgainstThePixel package named in PRD §10. Quest IL2CPP compatibility is still to be proven on a device (PRD A20); S3 keeps the code AOT-friendly. RULING(Handler 2026-10-27)
