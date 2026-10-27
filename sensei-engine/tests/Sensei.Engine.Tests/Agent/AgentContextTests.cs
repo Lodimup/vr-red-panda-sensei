@@ -110,6 +110,18 @@ public sealed class AgentContextTests
     }
 
     [Fact]
+    public async Task S64_the_system_prompt_asks_for_few_rounds_and_batched_calls()
+    {
+        var chat = new ScriptedChatClient().EnqueueText("ok");
+        await using var t = await EngineAsync(chat);
+        await t.Engine.RunTurnAsync("hi");
+        var text = Instructions(chat);
+        Assert.Contains("at most 4 model rounds per turn", text);
+        Assert.Contains("put every call whose arguments you already know into the same response", text);
+        Assert.Contains("answer with no further tool calls", text);
+    }
+
+    [Fact]
     public async Task S88_the_system_prompt_tells_sensei_to_speak_any_recap_before_end_activity()
     {
         var chat = new ScriptedChatClient().EnqueueText("ok");
