@@ -34,7 +34,7 @@ public sealed class ProfileCorruptException : Exception
 /// <summary>Profile ids (S57): <c>^[a-z0-9_-]{1,40}$</c>.</summary>
 public static class ProfileIds
 {
-    private static readonly Regex Pattern = new("^[a-z0-9_-]{1,40}$", RegexOptions.CultureInvariant);
+    private static readonly Regex Pattern = new(@"^[a-z0-9_-]{1,40}\z", RegexOptions.CultureInvariant);
 
     public static bool IsValid(string? profileId) => profileId is not null && Pattern.IsMatch(profileId);
 

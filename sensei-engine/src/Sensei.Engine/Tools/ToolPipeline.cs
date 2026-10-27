@@ -273,76 +273,55 @@ internal sealed class ToolPipeline
 
     private JsonElement SanitizeElement(JsonElement element)
     {
-        var node = JsonNode.Parse(element.GetRawText());
-        if (!SanitizeNode(ref node)) return element;
-        return JsonCopy.ToElement(node);
+        var text = SanitizedJson(element);
+        using var doc = JsonDocument.Parse(text);
+        return doc.RootElement.Clone();
     }
 
-    /// <summary>Sanitizes string values and property names in place; true when anything changed.</summary>
-    private bool SanitizeNode(ref JsonNode? node)
-    {
-        var s = _core.Secrets;
-        switch (node)
-        {
-            case JsonObject obj:
-            {
-                var changed = false;
-                foreach (var name in obj.Select(kv => kv.Key).ToList())
-                {
-                    var child = obj[name];
-                    var childChanged = SanitizeNode(ref child);
-                    var cleanName = s.Sanitize(name) ?? name;
-                    if (cleanName != name)
-                    {
-                        obj.Remove(name);
-                        obj[cleanName] = child?.DeepClone();
-                        changed = true;
-                    }
-                    else if (childChanged)
-                    {
-                        obj[name] = child?.DeepClone();
-                        changed = true;
-                    }
-                }
-                return changed;
-            }
-            case JsonArray arr:
-            {
-                var changed = false;
-                for (var i = 0; i < arr.Count; i++)
-                {
-                    var child = arr[i];
-                    if (SanitizeNode(ref child))
-                    {
-                        arr[i] = child?.DeepClone();
-                        changed = true;
-                    }
-                }
-                return changed;
-            }
-            case JsonValue value when value.GetValueKind() == JsonValueKind.String:
-            {
-                var text = value.GetValue<string>();
-                var clean = s.Sanitize(text);
-                if (clean == text) return false;
-                node = JsonValue.Create(clean);
-                return true;
-            }
-            default:
-                return false;
-        }
-    }
-
-    /// <summary>Sanitized arguments text: values cleaned in a parsed tree when it parses, else the raw text redacted.</summary>
+    /// <summary>Sanitized arguments text: values and names cleaned when it parses (duplicates kept), else the raw text redacted.</summary>
     private string SanitizeJsonText(string json)
     {
-        if (ArgumentSchema.TryParse(json, out var element) && !string.IsNullOrWhiteSpace(json))
-        {
-            var node = JsonNode.Parse(element.GetRawText());
-            SanitizeNode(ref node);
-            return node?.ToJsonString() ?? "null";
-        }
+        if (!string.IsNullOrWhiteSpace(json) && ArgumentSchema.TryParse(json, out var element)) return SanitizedJson(element);
         return _core.Secrets.Sanitize(json) ?? "";
+    }
+
+    /// <summary>Compact JSON of <paramref name="element"/> with every string value and property name sanitized (S77).</summary>
+    private string SanitizedJson(JsonElement element)
+    {
+        using var stream = new System.IO.MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+        {
+            WriteSanitized(element, writer);
+        }
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private void WriteSanitized(JsonElement element, Utf8JsonWriter writer)
+    {
+        var s = _core.Secrets;
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var p in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(s.Sanitize(p.Name) ?? p.Name);
+                    WriteSanitized(p.Value, writer);
+                }
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray()) WriteSanitized(item, writer);
+                writer.WriteEndArray();
+                break;
+            case JsonValueKind.String:
+                writer.WriteStringValue(s.Sanitize(element.GetString()) ?? "");
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
     }
 
     private bool CompletedBySenseiSince(long eventMark) =>

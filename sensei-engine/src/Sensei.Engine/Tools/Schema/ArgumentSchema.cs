@@ -122,7 +122,7 @@ public sealed class ArgumentSchema
                     break;
                 case "pattern":
                     var pattern = kw.Value.GetString()!;
-                    _patterns[pattern] = new Regex(pattern, RegexOptions.CultureInvariant);
+                    _patterns[pattern] = new Regex(AnchorEnd(pattern), RegexOptions.CultureInvariant);
                     break;
             }
         }
@@ -157,6 +157,10 @@ public sealed class ArgumentSchema
                 return null;
         }
     }
+
+    /// <summary>JSON Schema `$` means end of string; .NET `$` also matches before a final newline, so a trailing `$` becomes `\z`.</summary>
+    private static string AnchorEnd(string pattern) =>
+        pattern.EndsWith("$", StringComparison.Ordinal) && !pattern.EndsWith("\\$", StringComparison.Ordinal) ? pattern.Substring(0, pattern.Length - 1) + "\\z" : pattern;
 
     private string? ValidateObject(JsonElement schema, JsonElement value, string path)
     {
