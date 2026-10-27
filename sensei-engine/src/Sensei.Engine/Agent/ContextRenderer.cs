@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Sensei.Engine.Json;
 using Sensei.Engine.Learner;
@@ -48,12 +49,12 @@ internal sealed class ContextRenderer
         lock (_core.Sync)
         {
             var profile = _core.Learner.Profile;
-            snapshotJson = JsonSerializer.Serialize(_core.World.Snapshot(), SenseiJsonContext.Default.SceneSnapshot);
+            snapshotJson = CompactSnapshot(_core.World.Snapshot());
             band = profile.StartingBand ?? "not chosen yet";
             workingLevel = profile.WorkingLevel;
             selfReported = profile.SelfReportedJlpt;
             languageMode = profile.Support.LanguageMode;
-            supportLine = string.Join(", ", SupportFields.All.Select(f => f + "=" + profile.Support.GetFieldValue(f)));
+            supportLine = string.Join(", ", SupportFields.All.Where(f => f != "language_mode").Select(f => f + "=" + profile.Support.GetFieldValue(f)));
             pinned = profile.Pinned.Count == 0 ? "none" : string.Join(", ", profile.Pinned);
             var recs = EvidenceRules.ComputeRecommendations(profile.Evidence);
             recommendations = recs.Count == 0 ? "none" : string.Join(", ", recs.Select(r => $"{r.Key} ({r.Dimension}): {r.Kind}"));
@@ -75,12 +76,11 @@ internal sealed class ContextRenderer
         sb.AppendLine($"- starting band: {band}");
         sb.AppendLine($"- working level (JLPT, hidden from the learner — never state it): {workingLevel}");
         if (selfReported is not null) sb.AppendLine($"- the learner reported their own level as: {selfReported}");
-        sb.AppendLine($"- language mode: {languageMode}");
-        sb.AppendLine($"- support settings: {supportLine}");
+        sb.AppendLine($"- support settings: language mode: {languageMode}, {supportLine}");
         sb.AppendLine($"- pinned by the learner (never change): {pinned}");
         sb.AppendLine($"- recommendations: {recommendations}");
         sb.AppendLine($"- review due: {reviewDue}");
-        sb.AppendLine($"- scene snapshot (selected object, active task and support included): {snapshotJson}");
+        sb.AppendLine($"- scene snapshot (revision, selected object, instances, active task): {snapshotJson}");
         return sb.ToString().TrimEnd();
     }
 
@@ -136,6 +136,28 @@ internal sealed class ContextRenderer
         return sb.ToString();
 
         string Safe(string text) => Neutralize(secrets.Sanitize(text) ?? "");
+    }
+
+    /// <summary>
+    /// The scene snapshot as the model needs it each request: what the catalog table in the prompt and the support line
+    /// above already say is left out (the Japanese, reading and English of each instance, the support settings, the
+    /// task's bookkeeping ids and assistance baseline). The full snapshot is still what <c>inspect_scene</c> returns (S20).
+    /// </summary>
+    internal static string CompactSnapshot(SceneSnapshot snapshot)
+    {
+        var node = JsonSerializer.SerializeToNode(snapshot, SenseiJsonContext.Default.SceneSnapshot)!.AsObject();
+        node.Remove("support");
+        if (node["instances"] is JsonArray instances)
+            foreach (var instance in instances.OfType<JsonObject>())
+            {
+                instance.Remove("japanese");
+                instance.Remove("reading");
+                instance.Remove("english");
+            }
+        if (node["active_task"] is JsonObject task)
+            foreach (var key in new[] { "assistance_baseline", "source_revision", "start_event_id", "predicates_since_event_id" })
+                task.Remove(key);
+        return node.ToJsonString();
     }
 
     private static string DescribeEvent(SceneEvent e)
