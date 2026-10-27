@@ -415,28 +415,75 @@ public sealed class ProviderStatusTests
     }
 
     [Theory]
+    [InlineData(401, TurnErrorCodes.AuthFailed)]
+    [InlineData(403, TurnErrorCodes.AuthFailed)]
+    [InlineData(402, TurnErrorCodes.QuotaExceeded)]
+    [InlineData(429, TurnErrorCodes.QuotaExceeded)]
+    [InlineData(500, TurnErrorCodes.ProviderError)]
+    public async Task S132_an_exact_http_request_exception_with_a_status_maps_by_that_status(int status, string code)
+    {
+        var result = await FailWith(new HttpRequestException("failed", null, (System.Net.HttpStatusCode)status));
+
+        Assert.Equal(code, result.ErrorCode);
+        Assert.StartsWith("HTTP " + status, result.ErrorDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task S132_an_exact_http_request_exception_without_a_status_is_a_network_error()
+    {
+        var result = await FailWith(new HttpRequestException("no route"));
+
+        Assert.Equal(TurnErrorCodes.NetworkError, result.ErrorCode);
+        Assert.DoesNotContain("HTTP ", result.ErrorDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task S132_an_exact_http_request_exception_inside_a_wrapper_is_read_too()
+    {
+        var inner = new HttpRequestException("denied", null, System.Net.HttpStatusCode.Unauthorized);
+        var result = await FailWith(new InvalidOperationException("outer", new AggregateException(new TimeoutException("slow"), inner)));
+
+        Assert.Equal(TurnErrorCodes.AuthFailed, result.ErrorCode);
+    }
+
+    [Theory]
     [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(402)]
     [InlineData(429)]
     [InlineData(500)]
-    public async Task S132_an_http_request_exception_and_its_subclasses_are_network_errors_without_a_member_read(int status)
+    public async Task S132_a_subclass_of_http_request_exception_with_the_same_status_is_a_network_error_without_a_member_read(int status)
     {
-        var plain = await FailWith(new HttpRequestException("failed", null, (System.Net.HttpStatusCode)status));
         var shadow = new ShadowedHttpRequestException(status);
-        var sub = await FailWith(shadow);
+        var plain = new PlainSubclassHttpRequestException(status);
 
-        Assert.Equal(TurnErrorCodes.NetworkError, plain.ErrorCode);
-        Assert.Equal(TurnErrorCodes.NetworkError, sub.ErrorCode);
+        var shadowed = await FailWith(shadow);
+        var unshadowed = await FailWith(plain);
+
+        Assert.Equal(TurnErrorCodes.NetworkError, shadowed.ErrorCode);
+        Assert.Equal(TurnErrorCodes.NetworkError, unshadowed.ErrorCode);
         Assert.Equal(0, shadow.GetterReads);
     }
 
     [Fact]
-    public void S132_the_source_does_not_use_reflection_to_read_a_status()
+    public void S132_the_source_has_one_reflective_read_and_it_is_the_status_of_the_framework_http_request_exception()
     {
         var source = File.ReadAllText(SourcePath("Agent", "ProviderErrors.cs"));
 
-        Assert.DoesNotContain("GetProperty", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("GetValue", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("System.Reflection", source, StringComparison.Ordinal);
+        Assert.Equal(1, Occurrences(source, ".GetProperty("));
+        Assert.Contains("typeof(HttpRequestException).GetProperty(\"StatusCode\")", source, StringComparison.Ordinal);
+        Assert.Equal(1, Occurrences(source, ".GetValue("));
+        Assert.DoesNotContain("GetType().GetProperty", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetMethod", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Invoke(", source, StringComparison.Ordinal);
+        Assert.Contains("node.GetType() == typeof(HttpRequestException)", source, StringComparison.Ordinal);
+    }
+
+    private static int Occurrences(string text, string needle)
+    {
+        var count = 0;
+        for (var at = text.IndexOf(needle, StringComparison.Ordinal); at >= 0; at = text.IndexOf(needle, at + needle.Length, StringComparison.Ordinal)) count++;
+        return count;
     }
 
     private static string SourcePath(params string[] parts)
@@ -464,6 +511,13 @@ public sealed class ProviderStatusTests
                 Interlocked.Increment(ref GetterReads);
                 throw new InvalidOperationException("foreign getter");
             }
+        }
+    }
+
+    private sealed class PlainSubclassHttpRequestException : HttpRequestException
+    {
+        public PlainSubclassHttpRequestException(int status) : base("denied", null, (System.Net.HttpStatusCode)status)
+        {
         }
     }
 

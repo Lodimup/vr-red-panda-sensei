@@ -92,14 +92,15 @@ public sealed class AgentErrorTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.TooManyRequests)]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    public async Task S132_an_http_request_exception_is_a_network_error_whatever_status_it_carries(HttpStatusCode status)
+    [InlineData(HttpStatusCode.Unauthorized, "auth_failed")]
+    [InlineData(HttpStatusCode.Forbidden, "auth_failed")]
+    [InlineData(HttpStatusCode.PaymentRequired, "quota_exceeded")]
+    [InlineData(HttpStatusCode.TooManyRequests, "quota_exceeded")]
+    [InlineData(HttpStatusCode.InternalServerError, "provider_error")]
+    public async Task S67_an_http_request_exception_with_a_status_maps_the_same_way(HttpStatusCode status, string expected)
     {
         var result = await FailWith(new HttpRequestException("failed", null, status));
-        Assert.Equal("network_error", result.ErrorCode);
-        Assert.DoesNotContain("HTTP ", result.ErrorDetail);
+        Assert.Equal(expected, result.ErrorCode);
     }
 
     [Fact]
