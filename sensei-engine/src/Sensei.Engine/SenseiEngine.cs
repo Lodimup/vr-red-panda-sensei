@@ -51,16 +51,24 @@ public sealed class SenseiEngine : IAsyncDisposable
         var clock = options.Clock ?? TimeProvider.System;
         var now = clock.GetUtcNow();
         var sessionId = NewSessionId(now);
-        var profile = await options.ProfileStore.LoadAsync(options.ProfileId, ct).ConfigureAwait(false)
-                      ?? LearnerProfile.CreateDefault(options.ProfileId, now);
-        var problem = profile.ProfileId != options.ProfileId ? "profile_id" : profile.FindShapeProblem();
-        if (problem is not null)
-            throw new ProfileCorruptException(options.ProfileId, options.ProfileId + ".json", new FormatException("invalid field: " + problem));
-        profile.Sessions.Add(new SessionRecord { SessionId = sessionId, StartedAt = now });
+        var secrets = new Secrets(options.KnownSecrets);
+        try
+        {
+            var profile = await options.ProfileStore.LoadAsync(options.ProfileId, ct).ConfigureAwait(false)
+                          ?? LearnerProfile.CreateDefault(options.ProfileId, now);
+            var problem = profile.ProfileId != options.ProfileId ? "profile_id" : profile.FindShapeProblem();
+            if (problem is not null)
+                throw new ProfileCorruptException(options.ProfileId, options.ProfileId + ".json", new FormatException("invalid field: " + problem));
+            profile.Sessions.Add(new SessionRecord { SessionId = sessionId, StartedAt = now });
 
-        var core = new EngineCore(options, clock, sessionId, new Secrets(options.KnownSecrets), profile, extraTools);
-        await core.Learner.SaveAsync(ct).ConfigureAwait(false);
-        return new SenseiEngine(core, runnerFactory);
+            var core = new EngineCore(options, clock, sessionId, secrets, profile, extraTools);
+            await core.Learner.SaveAsync(ct).ConfigureAwait(false);
+            return new SenseiEngine(core, runnerFactory);
+        }
+        catch (Exception ex) when (ExceptionSanitizer.TryRewrite(ex, secrets, out var safe))
+        {
+            throw safe; // S77
+        }
     }
 
     internal EngineCore Core => _core;
@@ -186,6 +194,10 @@ public sealed class SenseiEngine : IAsyncDisposable
         {
             await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
         }
+        catch (Exception ex) when (_core.TrySanitize(ex, out var safe))
+        {
+            throw safe; // S77
+        }
         finally
         {
             _core.FlushNotifications();
@@ -206,6 +218,10 @@ public sealed class SenseiEngine : IAsyncDisposable
         try
         {
             await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (_core.TrySanitize(ex, out var safe))
+        {
+            throw safe; // S77
         }
         finally
         {
@@ -245,6 +261,10 @@ public sealed class SenseiEngine : IAsyncDisposable
             _runner.ResetConversation();
             _previousTurnInterrupted = false;
             await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (_core.TrySanitize(ex, out var safe))
+        {
+            throw safe; // S77
         }
         finally
         {
@@ -324,6 +344,10 @@ public sealed class SenseiEngine : IAsyncDisposable
                 _previousTurnInterrupted = result.Status == TurnStatuses.Cancelled;
             }
             result.ErrorDetail = _core.Secrets.Sanitize(result.ErrorDetail);
+        }
+        catch (Exception ex) when (_core.TrySanitize(ex, out var safe))
+        {
+            throw safe; // S77: a failing store, speech port or provider never hands the host a known secret
         }
         finally
         {

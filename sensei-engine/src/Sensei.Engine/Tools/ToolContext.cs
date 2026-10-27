@@ -67,6 +67,12 @@ public sealed class ToolContext
     /// <summary>Set by <see cref="EndGenerationAfterCall"/>.</summary>
     internal bool EndsGeneration { get; private set; }
 
+    /// <summary>True once a commit made inside this call's <see cref="Locked"/> body completed the active task (S35d).</summary>
+    internal bool CompletedTask { get; private set; }
+
+    /// <summary>Called by the task book (under the lock) when a Sensei commit completes the task: credits the call whose body is running.</summary>
+    internal void NoteTaskCompleted() => CompletedTask = true;
+
     /// <summary>Next interaction-sequence position (S92). Under <see cref="Sync"/>.</summary>
     public long NextSequence() => _core.NextSequence();
 
@@ -88,7 +94,16 @@ public sealed class ToolContext
                 var stale = _core.Pipeline.CheckStale(Turn);
                 if (stale is not null) return stale;
             }
-            return body();
+            var previous = _core.ActiveContext;
+            _core.ActiveContext = this;
+            try
+            {
+                return body();
+            }
+            finally
+            {
+                _core.ActiveContext = previous;
+            }
         }
     }
 
