@@ -55,10 +55,17 @@ public sealed class ArgumentSchema
         return ValidateNode(Root, instance, "");
     }
 
-    /// <summary>Parses <paramref name="json"/>; null/blank is treated as <c>{}</c>. Returns false on malformed JSON.</summary>
+    /// <summary>
+    /// Parses <paramref name="json"/>. Returns false on malformed JSON, including null, empty and whitespace-only text:
+    /// a blank document is not a JSON object (S21), so a caller that wants no arguments sends <c>{}</c>.
+    /// </summary>
     public static bool TryParse(string? json, out JsonElement element)
     {
-        if (string.IsNullOrWhiteSpace(json)) json = "{}";
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            element = default;
+            return false;
+        }
         try
         {
             using var doc = JsonDocument.Parse(json!, new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow, MaxDepth = 32 });

@@ -11,9 +11,18 @@ public sealed class LearnerProfile
 {
     public const int CurrentVersion = 1;
 
+    // [JsonRequired]: a stored profile must name every member S58 lists; a missing one is corrupt (S57), never a default.
+    // starting_band, self_reported_jlpt and the other nullable members may be absent, which means null.
+    [JsonRequired]
     public int Version { get; set; } = CurrentVersion;
+
+    [JsonRequired]
     public string ProfileId { get; set; } = "";
+
+    [JsonRequired]
     public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonRequired]
     public DateTimeOffset UpdatedAt { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
@@ -22,12 +31,25 @@ public sealed class LearnerProfile
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? SelfReportedJlpt { get; set; }
 
+    [JsonRequired]
     public string WorkingLevel { get; set; } = WorkingLevels.PreN5;
+
+    [JsonRequired]
     public List<LevelChange> LevelHistory { get; set; } = new();
+
+    [JsonRequired]
     public SupportSettings Support { get; set; } = new();
+
+    [JsonRequired]
     public List<string> Pinned { get; set; } = new();
+
+    [JsonRequired]
     public List<EvidenceRecord> Evidence { get; set; } = new();
+
+    [JsonRequired]
     public Dictionary<string, string> Notes { get; set; } = new();
+
+    [JsonRequired]
     public List<SessionRecord> Sessions { get; set; } = new();
 
     /// <summary>A new default profile (S7): version 1, no band, working level pre_n5, zero-band support.</summary>
@@ -73,22 +95,35 @@ public sealed class LearnerProfile
 /// <summary>One entry of <c>level_history</c> (S51, S100).</summary>
 public sealed class LevelChange
 {
+    [JsonRequired]
     public string From { get; set; } = "";
+
+    [JsonRequired]
     public string To { get; set; } = "";
+
+    [JsonRequired]
     public string Reason { get; set; } = "";
+
+    [JsonRequired]
     public DateTimeOffset At { get; set; }
 
     /// <summary>Attempt ids that drove an evidence-driven change (S100); null for band/self-report/difficulty.</summary>
     public List<string>? EvidenceIds { get; set; }
 
+    [JsonRequired]
     public bool Superseded { get; set; }
 }
 
 /// <summary>One <c>sessions</c> entry (S58).</summary>
 public sealed class SessionRecord
 {
+    [JsonRequired]
     public string SessionId { get; set; } = "";
+
+    [JsonRequired]
     public DateTimeOffset StartedAt { get; set; }
+
+    [JsonRequired]
     public List<PreferenceChange> PreferenceChanges { get; set; } = new();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
@@ -98,6 +133,7 @@ public sealed class SessionRecord
 /// <summary>A support/band change recorded in the session (S41, S55).</summary>
 public sealed class PreferenceChange
 {
+    [JsonRequired]
     public string Field { get; set; } = "";
 
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
@@ -107,34 +143,67 @@ public sealed class PreferenceChange
     public string? To { get; set; }
 
     /// <summary><c>player</c> or <c>sensei</c>.</summary>
+    [JsonRequired]
     public string By { get; set; } = "";
 }
 
 /// <summary>Committed evidence of one attempt (S46, S93, S96, S98).</summary>
 public sealed class EvidenceRecord
 {
+    [JsonRequired]
     public string AttemptId { get; set; } = "";
+
+    [JsonRequired]
     public string SessionId { get; set; } = "";
+
+    [JsonRequired]
     public long TurnId { get; set; }
+
+    [JsonRequired]
     public SkillTarget Target { get; set; } = new();
     public string? TranscriptExcerpt { get; set; }
     public string? SourceUtteranceId { get; set; }
+
+    [JsonRequired]
     public List<long> EventIds { get; set; } = new();
+
+    [JsonRequired]
     public List<string> Actors { get; set; } = new();
 
     /// <summary><c>task_completed</c> | <c>task_active</c> | <c>no_task</c>.</summary>
+    [JsonRequired]
     public string EngineOutcome { get; set; } = "";
     public string? TaskId { get; set; }
+
+    [JsonRequired]
     public string LanguageAssessment { get; set; } = "";
+
+    [JsonRequired]
     public bool CommunicativeSuccess { get; set; }
+
+    [JsonRequired]
     public List<string> Assistance { get; set; } = new();
+
+    [JsonRequired]
     public string Outcome { get; set; } = "";
+
+    [JsonRequired]
     public bool IsFreshVariation { get; set; }
+
+    [JsonRequired]
     public string Uncertainty { get; set; } = "low";
+
+    [JsonRequired]
     public string AssessmentSource { get; set; } = "model";
+
+    [JsonRequired]
     public string RuleVersion { get; set; } = "rules-v1";
+
+    [JsonRequired]
     public bool Superseded { get; set; }
     public string? Note { get; set; }
+
+    [JsonRequired]
     public DateTimeOffset At { get; set; }
 }
 

@@ -24,6 +24,7 @@ internal sealed class EngineCore
     private readonly object _sinkGate = new();
     private long _sequence;
     private long _generation;
+    private long _callerGeneration;
     private long _turnCounter;
     private long _learnerUtteranceCounter;
     private long _speechUtteranceCounter;
@@ -73,6 +74,21 @@ internal sealed class EngineCore
         get { lock (Sync) return _generation; }
     }
 
+    /// <summary>
+    /// The generation calls made without an explicit one belong to: the one the last <c>BeginTurn</c> started (0 before any turn).
+    /// It differs from <see cref="CurrentGeneration"/> once the generation was cancelled or ended, even before a first turn exists (S27).
+    /// </summary>
+    public long CallerGeneration
+    {
+        get { lock (Sync) return _callerGeneration; }
+    }
+
+    /// <summary>The call whose <see cref="ToolContext.Locked"/> body is running; set and read only under <see cref="Sync"/> (S35d).</summary>
+    internal ToolContext? ActiveContext { get; set; }
+
+    /// <summary>S77: for an exception filter — true, with a redacted copy, when <paramref name="ex"/> carries a known secret or credential-pattern match.</summary>
+    public bool TrySanitize(Exception ex, out Exception safe) => ExceptionSanitizer.TryRewrite(ex, Secrets, out safe);
+
     /// <summary>Cancelled when the current generation is cancelled (S27, S66).</summary>
     public CancellationToken GenerationToken
     {
@@ -103,6 +119,7 @@ internal sealed class EngineCore
             _generation++;
             previousCts = _generationCts;
             _generationCts = new CancellationTokenSource();
+            _callerGeneration = _generation;
             var turnId = ++_turnCounter;
             var utterance = new LearnerUtterance
             {
@@ -193,6 +210,7 @@ internal sealed class EngineCore
         SpeechHistory.Clear();
         Pipeline.ClearCache();
         CurrentTurn = null;
+        _callerGeneration = _generation; // after a reset a call without a turn is no_turn, not cancelled
     }
 
     /// <summary>Called by scene commits (under the lock): queue the scene notification, then evaluate the active task (S35d).</summary>

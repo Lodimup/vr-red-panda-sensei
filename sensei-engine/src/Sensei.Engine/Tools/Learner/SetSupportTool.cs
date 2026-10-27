@@ -1,7 +1,11 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
+using Sensei.Engine.Learner;
 
 namespace Sensei.Engine.Tools.Learner;
 
@@ -51,6 +55,80 @@ public sealed class SetSupportTool : SenseiTool<SetSupportArgs>
 
     protected override JsonTypeInfo<SetSupportArgs> ArgsTypeInfo => SenseiJsonContext.Default.SetSupportArgs;
 
-    public override Task<ToolResult> ExecuteAsync(SetSupportArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Failure(ToolErrorCodes.InvalidArguments, ToolDetails.NotImplemented));
+    /// <summary><c>reason</c> values.</summary>
+    public const string ReasonLearnerRequest = "learner_request";
+
+    public const string ReasonAdaptation = "adaptation";
+
+    /// <summary>S120: detail when <c>adaptation</c> sets <c>starting_band</c> while a band is already set.</summary>
+    public const string BandAlreadySetDetail = "band_already_set";
+
+    public override string? ValidateArguments(SetSupportArgs args) =>
+        ExplicitFields(args).Count == 0 && args.Difficulty is null && args.StartingBand is null && args.SelfReportedJlpt is null
+            ? "arguments: at least one field besides reason is required"
+            : null;
+
+    public override async Task<ToolResult> ExecuteAsync(SetSupportArgs args, ToolContext context, CancellationToken ct)
+    {
+        var result = context.Locked(() =>
+        {
+            var profile = context.Profile;
+            var fields = ExplicitFields(args);
+
+            // S76: a pinned field is never changed by a tool call, whatever the reason. The whole call is validated before anything changes.
+            foreach (var (field, _) in fields)
+                if (profile.IsPinned(field))
+                    return context.Failure(ToolErrorCodes.PreferencePinned, $"{field}: pinned by the learner; only the learner can change it");
+            // S41, S120: adaptation may only set the band while it is unset.
+            if (args.Reason == ReasonAdaptation && args.StartingBand is not null && profile.StartingBand is not null)
+                return context.Failure(ToolErrorCodes.InvalidArguments, BandAlreadySetDetail);
+
+            // S103: band defaults first (unpinned fields incl. language_mode), then explicit fields, then self-report, then difficulty.
+            var session = context.Learner.CurrentSession(context.SessionId);
+            var at = context.Clock.GetUtcNow();
+            if (args.StartingBand is not null)
+                SupportRules.ApplyStartingBand(profile, session, args.StartingBand, PreferenceActors.Sensei, at);
+            foreach (var (field, value) in fields)
+                SupportRules.SetField(profile, session, field, value, PreferenceActors.Sensei);
+            if (args.SelfReportedJlpt is not null)
+            {
+                // S41, S120: the self-report is always stored; it moves the level only before evidence exists or when the learner asked.
+                profile.SelfReportedJlpt = args.SelfReportedJlpt;
+                if (args.Reason == ReasonLearnerRequest || !profile.Evidence.Any(e => !e.Superseded))
+                    SupportRules.SetWorkingLevel(profile, args.SelfReportedJlpt, LevelChangeReasons.SelfReport, at);
+            }
+            if (args.Difficulty is not null)
+            {
+                var step = args.Difficulty == "harder" ? 1 : -1;
+                var reason = args.Reason == ReasonLearnerRequest ? LevelChangeReasons.LearnerRequest : LevelChangeReasons.Adaptation;
+                SupportRules.SetWorkingLevel(profile, WorkingLevels.Step(profile.WorkingLevel, step), reason, at);
+            }
+
+            context.QueueSupportChanged();
+            var data = new JsonObject
+            {
+                ["support"] = ToolContext.ToNode(profile.Support, SenseiJsonContext.Default.SupportSettings),
+                ["pinned"] = ToolContext.ToNode(profile.Pinned, SenseiJsonContext.Default.ListString),
+                ["working_level"] = profile.WorkingLevel,
+            };
+            return context.Success(null, ToolContext.ToData(data));
+        });
+        // Committed: save without the call's token so a late cancel cannot turn it into `cancelled` (S22).
+        if (result.IsSuccess) await context.SaveProfileAsync(CancellationToken.None).ConfigureAwait(false);
+        return result;
+    }
+
+    /// <summary>The support fields the call sets explicitly, in SPEC order, with their string values.</summary>
+    private static List<(string Field, string Value)> ExplicitFields(SetSupportArgs a)
+    {
+        var fields = new List<(string, string)>();
+        if (a.ShowJapanese.HasValue) fields.Add((SupportFields.ShowJapanese, a.ShowJapanese.Value ? "true" : "false"));
+        if (a.ShowReading.HasValue) fields.Add((SupportFields.ShowReading, a.ShowReading.Value ? "true" : "false"));
+        if (a.ShowRomaji.HasValue) fields.Add((SupportFields.ShowRomaji, a.ShowRomaji.Value ? "true" : "false"));
+        if (a.ShowTranslation.HasValue) fields.Add((SupportFields.ShowTranslation, a.ShowTranslation.Value ? "true" : "false"));
+        if (a.Pace is not null) fields.Add((SupportFields.Pace, a.Pace));
+        if (a.CorrectionStyle is not null) fields.Add((SupportFields.CorrectionStyle, a.CorrectionStyle));
+        if (a.LanguageMode is not null) fields.Add((SupportFields.LanguageMode, a.LanguageMode));
+        return fields;
+    }
 }
