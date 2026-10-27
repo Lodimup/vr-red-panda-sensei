@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
+using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Agent;
 
@@ -46,7 +47,7 @@ internal static class HistorySettler
 
     private static JsonElement CancelledElement()
     {
-        using var doc = JsonDocument.Parse(CancelledResult);
+        using var doc = JsonDocument.Parse(CancelledResult, new JsonDocumentOptions { MaxDepth = JsonRedaction.WalkDepth(JsonRedaction.MaxFinalValues) });
         return doc.RootElement.Clone();
     }
 }

@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
@@ -34,21 +33,6 @@ namespace Sensei.Engine.Llm;
 /// </remarks>
 internal sealed class SerializedRequestGuard : DelegatingChatClient
 {
-    /// <summary><c>object</c> is serialized under the runtime type of the value, which is what a leaf of an unknown type needs. Built on first use: a runtime that cannot build it only loses this one case, which is then refused.</summary>
-    private static readonly Lazy<JsonTypeInfo<object>?> LeafInfo = new(CreateLeafInfo);
-
-    private static JsonTypeInfo<object>? CreateLeafInfo()
-    {
-        try
-        {
-            return (JsonTypeInfo<object>)new JsonSerializerOptions(AIJsonUtilities.DefaultOptions).GetTypeInfo(typeof(object));
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
     private readonly Secrets _secrets;
 
     public SerializedRequestGuard(IChatClient inner, Secrets secrets)
@@ -178,7 +162,7 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
     /// <summary>
     /// The JSON text of a loosely typed value, written without recursion. Strings, numbers, booleans, JSON elements and nodes are
     /// written as they are; a dictionary with string keys is an object; any other sequence is an array; anything else is written by the
-    /// standard serializer under its runtime type. More than <paramref name="limit"/> values (a cycle included) or a value that cannot
+    /// serializer under its runtime type (see <see cref="JsonRedaction.ClrNestingLimit"/>). More than <paramref name="limit"/> values (a cycle included) or a value that cannot
     /// be written is <see cref="OutboundRejectedException"/>.
     /// </summary>
     private static byte[] WriteJson(object? root, int limit)
@@ -268,17 +252,17 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
                 open.Push((sequence.GetEnumerator(), false));
                 break;
             default:
-                // A number, a Uri, a Guid, an enum, a record: whatever the serializer would send for it.
-                JsonTypeInfo<object> info = LeafInfo.Value ?? throw new OutboundRejectedException(OutboundRejectedException.NotSerializable);
-                System.Text.Json.JsonSerializer.Serialize(writer, value, info);
+                // A number, a Uri, a Guid, an enum, a record: whatever the serializer would send for it, written into a writer of its
+                // own so the serializer's nesting guard (S133) is its framework default while the writer takes the request cap + 1.
+                JsonRedaction.WriteClr(writer, value);
                 break;
         }
     }
 
-    /// <summary>The instructions are plain text the engine owns; they are one string value of the request and are cleaned as text, on a copy of the options.</summary>
+    /// <summary>The instructions are plain text the engine owns; they are one string value of the request whenever they are not null (an empty string included) and are cleaned as text, on a copy of the options.</summary>
     private ChatOptions? GuardedOptions(ChatOptions? options, ref int budget)
     {
-        if (options?.Instructions is not { Length: > 0 } instructions) return options;
+        if (options?.Instructions is not { } instructions) return options;
         Charge(ref budget);
         var cleaned = _secrets.Sanitize(instructions);
         if (string.Equals(cleaned, instructions, StringComparison.Ordinal)) return options;

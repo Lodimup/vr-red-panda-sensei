@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
+using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Agent;
 
@@ -33,7 +34,7 @@ internal sealed class PassThroughFunction : AIFunction
 
     private static JsonElement ParseSchema()
     {
-        using var doc = JsonDocument.Parse("{\"type\":\"object\"}");
+        using var doc = JsonDocument.Parse("{\"type\":\"object\"}", new JsonDocumentOptions { MaxDepth = JsonRedaction.WalkDepth(JsonRedaction.MaxFinalValues) });
         return doc.RootElement.Clone();
     }
 }

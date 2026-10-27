@@ -5,6 +5,9 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using Microsoft.Extensions.AI;
 
 namespace Sensei.Engine.Trace;
 
@@ -87,8 +90,104 @@ internal static class JsonRedaction
         }
     }
 
-    /// <summary>The reader and writer depth for a walk of at most <paramref name="maxValues"/> values (a nesting level costs at least one value).</summary>
-    private static int WalkDepth(int maxValues) => (int)Math.Min((long)maxValues + 1, 1_000_001);
+    /// <summary>The reader, writer and document depth for a walk of at most <paramref name="maxValues"/> values (a nesting level costs at least one value).</summary>
+    internal static int WalkDepth(int maxValues) => (int)Math.Min((long)maxValues + 1, 1_000_001);
+
+    /// <summary>
+    /// The one depth that is NOT raised to the value cap: how deeply the standard serializer may nest the properties of a CLR object. It is
+    /// the framework default, and it is the only guard there is: System.Text.Json recurses on the call stack with no stack check of its
+    /// own. Measured on this runtime: a cyclic object (<c>class C { C Self }</c>) serialized with <c>MaxDepth</c> 10 001 ends the process
+    /// (stack overflow, nothing can catch it) on a 1.5 MiB thread stack, with 20 001 on a 1 MiB stack; with 64 it is a
+    /// <see cref="JsonException"/>. A deep JSON element held by such an object needs no more than this: it is written by the writer
+    /// (iteratively), whose <c>MaxDepth</c> is the value cap + 1. A deep JSON node is not safe to leave to the framework: the node's own
+    /// <c>WriteTo</c> recurses once per level (measured: a record holding a node nested 20 000 deep ends the process on a 1 MiB stack),
+    /// so inside such an object every node goes through <see cref="NodeConverter{T}"/>, the same iterative walk as everywhere else.
+    /// </summary>
+    internal const int ClrNestingLimit = 64;
+
+    /// <summary>The standard serializer under the runtime type of a value, with <see cref="ClrNestingLimit"/>. Built on first use: a runtime that cannot build it only loses CLR values of an unknown type, which are then refused.</summary>
+    private static readonly Lazy<JsonTypeInfo<object>?> ClrInfo = new(CreateClrInfo);
+
+    private static JsonTypeInfo<object>? CreateClrInfo()
+    {
+        try
+        {
+            var options = new JsonSerializerOptions(AIJsonUtilities.DefaultOptions) { MaxDepth = ClrNestingLimit };
+            AddNodeConverters(options);
+            return (JsonTypeInfo<object>)options.GetTypeInfo(typeof(object));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The options for writing a node that holds a CLR value (<see cref="WriteTreeLeaf"/>): the serializer's own nesting guard and the iterative node converters.</summary>
+    private static readonly Lazy<JsonSerializerOptions?> NodeLeafOptions = new(CreateNodeLeafOptions);
+
+    private static JsonSerializerOptions? CreateNodeLeafOptions()
+    {
+        try
+        {
+            var options = new JsonSerializerOptions { MaxDepth = ClrNestingLimit, TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
+            AddNodeConverters(options);
+            return options;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static void AddNodeConverters(JsonSerializerOptions options)
+    {
+        options.Converters.Add(new NodeConverter<JsonNode>());
+        options.Converters.Add(new NodeConverter<JsonObject>());
+        options.Converters.Add(new NodeConverter<JsonArray>());
+        options.Converters.Add(new NodeConverter<JsonValue>());
+    }
+
+    /// <summary>Writes a JSON node held by a CLR value with <see cref="WriteJsonTree"/> (an explicit stack, no recursion, at most <see cref="MaxFinalValues"/> values) instead of the node's own recursive <c>WriteTo</c>.</summary>
+    private sealed class NodeConverter<T> : JsonConverter<T> where T : JsonNode
+    {
+        public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            throw new NotSupportedException("nodes are only written here");
+
+        public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+        {
+            var count = 0;
+            var changed = false;
+            if (!WriteJsonTree(value, writer, null, MaxFinalValues, ref count, ref changed))
+                throw new JsonException("the JSON node has too many values");
+        }
+    }
+
+    /// <summary>A boolean or a finite number: the only CLR values that need no serializer (anything else can hold text, a getter that throws, or a nesting).</summary>
+    private static bool IsScalar(object? value) => value switch
+    {
+        bool or sbyte or byte or short or ushort or int or uint or long or ulong or decimal => true,
+        float single => !float.IsNaN(single) && !float.IsInfinity(single),
+        double number => !double.IsNaN(number) && !double.IsInfinity(number),
+        _ => false,
+    };
+
+    /// <summary>
+    /// The JSON of a value of any type, serialized under its runtime type into a writer of its own (so the serializer's nesting count starts
+    /// at zero and the writer's <c>MaxDepth</c> is the request cap + 1). Reads every property, so a getter that throws throws here.
+    /// </summary>
+    internal static byte[] SerializeClr(object value)
+    {
+        JsonTypeInfo<object> info = ClrInfo.Value ?? throw new JsonException("the value cannot be serialized on this runtime");
+        using var stream = new System.IO.MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, MaxDepth = WalkDepth(MaxFinalValues) }))
+        {
+            JsonSerializer.Serialize(writer, value, info);
+        }
+        return stream.ToArray();
+    }
+
+    /// <summary>Writes <paramref name="value"/> (not JSON, not a scalar) as the JSON <see cref="SerializeClr"/> gives for it.</summary>
+    internal static void WriteClr(Utf8JsonWriter writer, object value) => writer.WriteRawValue(SerializeClr(value), skipInputValidation: true);
 
     /// <summary><see cref="Secrets.Sanitize"/> as a function that never returns null.</summary>
     internal static Func<string, string> Cleaner(Secrets secrets) => text => secrets.Sanitize(text) ?? "";
@@ -382,16 +481,36 @@ internal static class JsonRedaction
         else writer.WriteStringValue(cleaned);
     }
 
+    /// <summary>The options for printing a scalar node: the request cap + 1 deep (nothing in a number or a boolean can recurse).</summary>
+    private static readonly JsonSerializerOptions ScalarMaxDepthOptions = new JsonSerializerOptions(AIJsonUtilities.DefaultOptions) { MaxDepth = WalkDepth(MaxFinalValues) };
+
     /// <summary>
-    /// A node that holds a value of some other type (a number, a <see cref="Uri"/>, a record): the node's own serializer writes it, and
-    /// that text is cleaned and counted like any other document. False when it does not fit the limit.
+    /// A node that holds a value of some other type (a number, a <see cref="Uri"/>, a record): it is written as JSON, and that text is
+    /// cleaned and counted like any other document. A number or boolean is printed by the node. Any other value is written by the node's
+    /// own serializer straight into a writer of its own, whose <c>MaxDepth</c> is the request cap + 1 while the serializer's nesting stays
+    /// <see cref="ClrNestingLimit"/>: a deep JSON element inside a record is written, a cyclic object is a <see cref="JsonException"/> and
+    /// never a stack overflow. False when it does not fit the limit.
     /// </summary>
     private static bool WriteTreeLeaf(JsonValue leaf, Utf8JsonWriter writer, Func<string, string>? clean, int maxValues, ref int count,
         ref bool changed)
     {
+        byte[] text;
+        if (leaf.TryGetValue(out object? held) && IsScalar(held))
+        {
+            text = Encoding.UTF8.GetBytes(leaf.ToJsonString(ScalarMaxDepthOptions));
+        }
+        else
+        {
+            using var stream = new System.IO.MemoryStream();
+            using (var own = new Utf8JsonWriter(stream, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, MaxDepth = WalkDepth(MaxFinalValues) }))
+            {
+                leaf.WriteTo(own, NodeLeafOptions.Value ?? throw new JsonException("the value cannot be serialized on this runtime"));
+            }
+            text = stream.ToArray();
+        }
+
         // The value itself was counted once already.
-        var status = SanitizeJson(Encoding.UTF8.GetBytes(leaf.ToJsonString()), clean ?? (text => text), maxValues - (count - 1),
-            out var output, out var values, out var leafChanged);
+        var status = SanitizeJson(text, clean ?? (value => value), maxValues - (count - 1), out var output, out var values, out var leafChanged);
         if (status == JsonWalkStatus.TooManyValues) return false;
         if (status != JsonWalkStatus.Ok) throw new JsonException("the JSON value cannot be read");
         count += values - 1;
@@ -425,8 +544,10 @@ internal static class JsonRedaction
 
     /// <summary>
     /// A sanitized copy of a loosely typed value (the arguments or result of a function call in a chat message): strings, JSON elements,
-    /// JSON nodes, dictionaries and sequences are rebuilt, walked with an explicit stack and no depth limit; anything else (numbers,
-    /// booleans) cannot hold text and is returned as is. A value with more than <see cref="MaxNodes"/> parts (a cycle included, and the
+    /// JSON nodes, dictionaries and sequences are rebuilt, walked with an explicit stack and no depth limit; a boolean or a finite number
+    /// cannot hold text and is returned as is; every other value (a record, a Uri, a Guid, an enum) is serialized under its runtime type
+    /// into a detached JSON element, so the result holds only strings, booleans, numbers, elements and the containers built here. A value
+    /// with more than <see cref="MaxNodes"/> parts (a cycle included, and the
     /// values inside a JSON element or node count as parts like any others) is replaced as a whole by <see cref="OversizedValue"/> and
     /// <paramref name="oversized"/> is set: nothing is forwarded unsanitized.
     /// </summary>
@@ -509,7 +630,10 @@ internal static class JsonRedaction
                 source = sequence;
                 return new List<object?>();
             default:
-                return value;
+                // A boolean or a finite number is data and goes on as it is. Any other value (a record, a Uri, a Guid, an enum, a number
+                // that is not finite, a JsonValue's CLR content) is read now, inside the boundary, into a detached JSON element: nothing
+                // lazy is left to run later in a serializer the engine does not control.
+                return IsScalar(value) ? value : RebuildClr(value, secrets, ref nodes);
         }
     }
 
@@ -522,13 +646,30 @@ internal static class JsonRedaction
     /// </summary>
     private static object? RebuildJson(object json, Secrets secrets, ref int nodes)
     {
-        var room = MaxNodes - (nodes - 1);
-        var status = SanitizeTree(json, Cleaner(secrets), room, out var output, out var values);
+        var status = SanitizeTree(json, Cleaner(secrets), MaxNodes - (nodes - 1), out var output, out var values);
+        return Detach(status, output, values, ref nodes);
+    }
+
+    /// <summary>
+    /// The sanitized copy of a value that is neither JSON nor a scalar: it is serialized under its runtime type (<see cref="SerializeClr"/>),
+    /// so every getter runs here, and the JSON that comes out is walked and counted like any other (<see cref="RebuildJson"/>). A getter or
+    /// serializer failure throws and is never replaced quietly.
+    /// </summary>
+    private static object? RebuildClr(object value, Secrets secrets, ref int nodes)
+    {
+        var status = SanitizeJson(SerializeClr(value), Cleaner(secrets), MaxNodes - (nodes - 1), out var output, out var values, out _);
+        return Detach(status, output, values, ref nodes);
+    }
+
+    /// <summary>The detached element for a walked value, its values added to <paramref name="nodes"/>; over the limit it is the whole-value replacement.</summary>
+    private static object? Detach(JsonWalkStatus status, byte[] output, int values, ref int nodes)
+    {
         if (status == JsonWalkStatus.TooManyValues)
         {
             nodes = MaxNodes + 1;
             return OversizedValue;
         }
+        if (status != JsonWalkStatus.Ok) throw new JsonException("the JSON value cannot be read");
         nodes += values - 1;
         using var doc = JsonDocument.Parse(output, new JsonDocumentOptions { MaxDepth = WalkDepth(MaxNodes) });
         return doc.RootElement.Clone();

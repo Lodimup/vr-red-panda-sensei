@@ -112,8 +112,8 @@ public sealed class RepairBoundaryTests
 
         var error = await Send(guard, "response", new List<ChatMessage> { TextMessage(20_000) }, new ChatOptions { Instructions = "" });
 
-        Assert.Null(error);
-        Assert.Equal(1, inner.RequestCount);
+        Assert.Equal("too_many_values", Assert.IsType<OutboundRejectedException>(error).Reason);
+        Assert.Equal(0, inner.RequestCount);
     }
 
     [Theory]
