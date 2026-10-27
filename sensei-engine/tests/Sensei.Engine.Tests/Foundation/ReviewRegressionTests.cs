@@ -207,6 +207,48 @@ public sealed class ReviewRegressionTests
         Assert.Equal(0, sink.CalledUnderLock);
     }
 
+    // S28: trace entries reach the sink in the order the calls produced them
+
+    private sealed class GatedSink : ITraceSink
+    {
+        private readonly object _sync = new();
+        private readonly List<TraceEntry> _entries = new();
+        public ManualResetEventSlim FirstEntered { get; } = new();
+        public ManualResetEventSlim ReleaseFirst { get; } = new();
+        private int _writes;
+
+        public IReadOnlyList<TraceEntry> Entries
+        {
+            get { lock (_sync) return _entries.ToList(); }
+        }
+
+        public void Write(TraceEntry entry)
+        {
+            if (Interlocked.Increment(ref _writes) == 1)
+            {
+                FirstEntered.Set();
+                ReleaseFirst.Wait(TimeSpan.FromSeconds(10));
+            }
+            lock (_sync) _entries.Add(entry);
+        }
+    }
+
+    [Fact]
+    public async Task S28_a_duplicate_is_never_traced_before_the_call_it_duplicates()
+    {
+        var sink = new GatedSink();
+        var options = new SenseiEngineOptions { ChatClient = null, Speech = new RecordingSpeechOutput(), ProfileStore = new InMemoryProfileStore(), Trace = sink };
+        await using var engine = await SenseiEngine.CreateAsync(options, new SenseiTool[] { new ProbeTool() }, null);
+        engine.BeginTurn("x");
+        var original = Task.Run(() => engine.InvokeToolAsync("test_probe", """{"action":"ok"}""", "c1"));
+        Assert.True(sink.FirstEntered.Wait(TimeSpan.FromSeconds(10)));
+        var duplicate = Task.Run(() => engine.InvokeToolAsync("test_probe", """{"action":"ok"}""", "c1"));
+        await Task.WhenAny(duplicate, Task.Delay(500));
+        sink.ReleaseFirst.Set();
+        Assert.Same(await original, await duplicate);
+        Assert.Equal(new[] { false, true }, sink.Entries.Select(e => e.Duplicate));
+    }
+
     // S57: parse-valid but malformed profiles are corrupt
 
     [Theory]

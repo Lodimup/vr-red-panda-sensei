@@ -20,6 +20,8 @@ internal sealed class EngineCore
 {
     private readonly List<Action> _unscoped = new();
     private readonly AsyncLocal<NotificationScope?> _scope = new();
+    private readonly Queue<TraceEntry> _traceQueue = new();
+    private readonly object _sinkGate = new();
     private long _sequence;
     private long _generation;
     private long _turnCounter;
@@ -262,6 +264,30 @@ internal sealed class EngineCore
 
         public void Dispose() => _core._scope.Value = _previous;
     }
+    /// <summary>Queues a trace entry; call under the lock. Entries reach the sink in queue order (S28).</summary>
+    public void EnqueueTrace(TraceEntry entry) => _traceQueue.Enqueue(entry);
+
+    /// <summary>
+    /// Writes queued trace entries to the sink in the order they were queued, one writer at a time, outside the engine lock (S9).
+    /// Never call while holding <see cref="Sync"/>.
+    /// </summary>
+    public void DrainTraces()
+    {
+        lock (_sinkGate)
+        {
+            while (true)
+            {
+                TraceEntry entry;
+                lock (Sync)
+                {
+                    if (_traceQueue.Count == 0) return;
+                    entry = _traceQueue.Dequeue();
+                }
+                WriteTrace(entry);
+            }
+        }
+    }
+
     /// <summary>Writes a sanitized trace entry (S28, S77). Sink exceptions are swallowed: tracing never breaks a call.</summary>
     public void WriteTrace(TraceEntry entry)
     {
@@ -300,6 +326,7 @@ internal sealed class EngineCore
             ErrorCode = ToolErrorCodes.EventHandlerError,
             Revision = revision,
         };
-        WriteTrace(entry);
+        lock (Sync) EnqueueTrace(entry);
+        DrainTraces();
     }
 }

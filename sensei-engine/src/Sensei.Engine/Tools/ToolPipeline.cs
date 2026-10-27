@@ -265,12 +265,13 @@ internal sealed class ToolPipeline
         var sanitized = Sanitize(result);
         if (cache && call.CacheThis && turn is not null)
             _cache[new CacheKey(turn.TurnId, call.GenerationId, call.CallId)] = new CacheEntry(call.ToolName, Canonical(call.ArgumentsJson), sanitized);
+        // Trace first: the original call's entry is queued before any duplicate it releases can queue one.
+        WriteTrace(call, sanitized, stopwatch, duplicate: false);
         if (call.InFlight is not null && cache)
         {
             _inFlight.Remove(call.InFlight.Key);
             call.InFlight.Completion.TrySetResult(sanitized);
         }
-        WriteTrace(call, sanitized, stopwatch, duplicate: false);
         return sanitized;
     }
 
@@ -295,20 +296,11 @@ internal sealed class ToolPipeline
             Result = result,
         };
         call.Turn?.TraceEntries.Add(entry);
-        call.PendingTraces.Add(entry);
+        _core.EnqueueTrace(entry);
     }
 
-    /// <summary>Hands queued trace entries to the sink outside the engine lock.</summary>
-    private void WritePendingTraces(Call call)
-    {
-        List<TraceEntry> entries;
-        lock (_core.Sync)
-        {
-            entries = new List<TraceEntry>(call.PendingTraces);
-            call.PendingTraces.Clear();
-        }
-        foreach (var e in entries) _core.WriteTrace(e);
-    }
+    /// <summary>Hands queued trace entries to the sink outside the engine lock, in the order they were created.</summary>
+    private void WritePendingTraces(Call call) => _core.DrainTraces();
 
     /// <summary>S77: a copy of <paramref name="result"/> with every string sanitized.</summary>
     private ToolResult Sanitize(ToolResult result)
@@ -422,6 +414,5 @@ internal sealed class ToolPipeline
         public ToolResult? Done;
         public Task<ToolResult>? Pending;
         public InFlightCall? InFlight;
-        public List<TraceEntry> PendingTraces = new();
     }
 }
