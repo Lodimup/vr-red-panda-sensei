@@ -47,7 +47,14 @@ public sealed class EngineEventRaiser
         }
         catch (Exception ex)
         {
-            _onHandlerError(method, ex);
+            try
+            {
+                _onHandlerError(method, ex);
+            }
+            catch (Exception)
+            {
+                // Reporting the handler's failure is best effort: it must not escape into the committed call that raised the event.
+            }
         }
     }
 }

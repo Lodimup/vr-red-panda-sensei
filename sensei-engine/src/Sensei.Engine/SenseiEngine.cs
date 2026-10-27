@@ -21,8 +21,9 @@ namespace Sensei.Engine;
 /// S77: every public member is one exception boundary. A failure of a dependency (store, speech port, provider, tool body,
 /// cancellation callback) or of the engine reaches the host as a <see cref="SenseiEngineException"/>; the documented exceptions
 /// (<see cref="InvalidOperationException"/> for <c>turn_in_progress</c>, <see cref="ArgumentException"/>,
-/// <see cref="Storage.ProfileCorruptException"/>, <see cref="OperationCanceledException"/>) arrive as themselves. Either way the
-/// message is sanitized and there is no inner exception; the full sanitized failure goes to the trace.
+/// <see cref="Storage.ProfileCorruptException"/>, <see cref="OperationCanceledException"/>) arrive as their own type. Either way the
+/// message is written by the engine (<c>&lt;operation&gt; failed: &lt;category&gt;</c> for a dependency's failure), no text of the
+/// failing exception is read to build it, and there is no inner exception; a bounded, sanitized description goes to the trace.
 /// </para>
 /// </summary>
 public sealed class SenseiEngine : IAsyncDisposable
@@ -50,20 +51,32 @@ public sealed class SenseiEngine : IAsyncDisposable
     internal static async Task<SenseiEngine> CreateAsync(SenseiEngineOptions options, IEnumerable<SenseiTool>? extraTools,
         Func<EngineCore, IAgentRunner>? runnerFactory, CancellationToken ct = default)
     {
-        var secrets = new Secrets(options?.KnownSecrets);
+        Secrets? secrets = null;
         var sessionId = "";
         try
         {
-            if (options is null) throw new ArgumentNullException(nameof(options));
-            if (options.Speech is null) throw new ArgumentException("Speech is required", nameof(options));
-            if (options.ProfileStore is null) throw new ArgumentException("ProfileStore is required", nameof(options));
+            // S77: everything below, including copying the host's secret list, is inside the boundary. If the sanitizer cannot be built
+            // there is nothing safe to describe the failure with, so the host gets the category only and nothing is traced.
+            secrets = BuildSecrets(options);
+            if (options is null) throw Authored.ArgumentNull(nameof(options));
+            if (options.Speech is null) throw Authored.Argument("Speech is required", nameof(options));
+            if (options.ProfileStore is null) throw Authored.Argument("ProfileStore is required", nameof(options));
             ProfileIds.Validate(options.ProfileId, nameof(options));
 
             var clock = options.Clock ?? TimeProvider.System;
             var now = clock.GetUtcNow();
             sessionId = NewSessionId(now);
-            var profile = await options.ProfileStore.LoadAsync(options.ProfileId, ct).ConfigureAwait(false)
-                          ?? LearnerProfile.CreateDefault(options.ProfileId, now);
+            LearnerProfile? stored;
+            try
+            {
+                stored = await options.ProfileStore.LoadAsync(options.ProfileId, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                FaultCategories.Tag(ex, FaultCategories.ProfileStore);
+                throw;
+            }
+            var profile = stored ?? LearnerProfile.CreateDefault(options.ProfileId, now);
             var problem = profile.ProfileId != options.ProfileId ? "profile_id" : profile.FindShapeProblem();
             if (problem is not null)
                 throw new ProfileCorruptException(options.ProfileId, options.ProfileId + ".json", new FormatException("invalid field: " + problem));
@@ -76,9 +89,23 @@ public sealed class SenseiEngine : IAsyncDisposable
         catch (Exception ex)
         {
             // S77: no engine exists yet to own the boundary, so it is applied here and traced straight to the host's sink.
-            var safe = ExceptionSanitizer.ForHost(ex, secrets, out var detail);
-            if (detail is not null) TraceCreateFailure(options, sessionId, detail);
+            var safe = ExceptionSanitizer.ForHost(ex, secrets ?? Secrets.None, out var detail, nameof(CreateAsync), options?.ProfileId);
+            if (detail is not null && secrets is not null) TraceCreateFailure(options, sessionId, detail);
             throw safe;
+        }
+    }
+
+    /// <summary>Copies the host's known secrets into the sanitizer; a list that cannot be read is an invalid configuration (S77).</summary>
+    private static Secrets BuildSecrets(SenseiEngineOptions? options)
+    {
+        try
+        {
+            return new Secrets(options?.KnownSecrets);
+        }
+        catch (Exception ex)
+        {
+            FaultCategories.Tag(ex, FaultCategories.InvalidConfiguration);
+            throw;
         }
     }
 
@@ -138,7 +165,7 @@ public sealed class SenseiEngine : IAsyncDisposable
     /// <summary>S23: starts a manual turn. Throws <see cref="InvalidOperationException"/> (<c>turn_in_progress</c>) while a turn runs (S87).</summary>
     public void BeginTurn(string transcript) => Guard(nameof(BeginTurn), () =>
     {
-        if (!_lifecycle.Wait(0)) throw new InvalidOperationException("turn_in_progress: a turn is running");
+        if (!_lifecycle.Wait(0)) throw Authored.InvalidOperation("turn_in_progress: a turn is running");
         try
         {
             var text = transcript ?? "";
@@ -205,9 +232,9 @@ public sealed class SenseiEngine : IAsyncDisposable
     /// <summary>S40, S76: sets the given support fields and pins them; saves. Invalid values → <see cref="ArgumentException"/>.</summary>
     public Task SetPreferenceByPlayerAsync(SupportPatch patch, CancellationToken ct = default) => GuardAsync(nameof(SetPreferenceByPlayerAsync), async () =>
     {
-        if (patch is null) throw new ArgumentNullException(nameof(patch));
+        if (patch is null) throw Authored.ArgumentNull(nameof(patch));
         var invalid = patch.Validate();
-        if (invalid is not null) throw new ArgumentException(invalid, nameof(patch));
+        if (invalid is not null) throw Authored.Argument(invalid, nameof(patch));
         using var scope = _core.OpenNotificationScope();
         lock (_core.Sync)
         {
@@ -228,7 +255,7 @@ public sealed class SenseiEngine : IAsyncDisposable
     public Task SetStartingBandAsync(string band, CancellationToken ct = default) => GuardAsync(nameof(SetStartingBandAsync), async () =>
     {
         if (!StartingBands.IsBand(band))
-            throw new ArgumentException($"starting band must be one of {string.Join(", ", StartingBands.All)}", nameof(band));
+            throw Authored.Argument($"starting band must be one of {string.Join(", ", StartingBands.All)}", nameof(band));
         using var scope = _core.OpenNotificationScope();
         lock (_core.Sync)
         {
@@ -290,6 +317,18 @@ public sealed class SenseiEngine : IAsyncDisposable
         if (_disposed) return;
         _disposed = true;
         await CancelRunningTurnAsync().ConfigureAwait(false);
+        // S22: a profile write that failed after its change committed is owed to the store; this is the last chance to pay it.
+        if (_core.Learner.IsDirty)
+        {
+            try
+            {
+                await _core.Learner.SaveAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _core.TraceProfileSaveFailed(ex);
+            }
+        }
     }));
 
     // ---------------------------------------------------------------- internals
@@ -398,6 +437,12 @@ public sealed class SenseiEngine : IAsyncDisposable
                         GenerationId = prepared.Request.Turn.GenerationId,
                         Status = TurnStatuses.Cancelled,
                     };
+                }
+                catch (Exception ex)
+                {
+                    // The agent loop is the provider's caller: what it throws and nothing else named it is the model's failure (S77).
+                    FaultCategories.Tag(ex, FaultCategories.Llm);
+                    throw;
                 }
             }
             if (prepared.Request is not null)

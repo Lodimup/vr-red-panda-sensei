@@ -74,7 +74,7 @@ public sealed class CallDispositionTests
                     return context.Success();
                 case Body.ReadThenWait:
                 {
-                    var read = context.Locked(() => context.Success());
+                    var read = context.Read(() => context.Success());
                     Reached.TrySetResult(true);
                     await Release.Task;
                     return read;

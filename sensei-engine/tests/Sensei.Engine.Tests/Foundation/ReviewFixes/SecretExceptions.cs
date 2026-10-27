@@ -16,6 +16,6 @@ public sealed class SecretExceptions
 
         Assert.NotNull(error);
         Assert.DoesNotContain(secret, error.ToString());
-        Assert.Contains("[redacted]", error.Message);
+        Assert.Equal("set_preference_by_player failed: profile_store_error", error.Message);
     }
 }

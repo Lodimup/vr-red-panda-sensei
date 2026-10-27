@@ -112,7 +112,7 @@ public sealed class ShowHintTool : SenseiTool<ShowHintArgs>
         };
 
         SpeechPlan? plan = null;
-        var gate = context.Locked(() =>
+        var gate = context.Read(() =>
         {
             // S37c
             if (segments is not null && context.Turn.SpokenCharacters + characters > SpeechPresenter.MaxSpokenCharactersPerTurn)
