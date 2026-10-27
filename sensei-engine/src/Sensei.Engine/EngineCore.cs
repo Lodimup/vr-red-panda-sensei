@@ -134,6 +134,36 @@ internal sealed class EngineCore
         }
     }
 
+    /// <summary>
+    /// S130: a request to the provider was built without some content of the conversation (a content type outside the allow-list, or a
+    /// value over the sanitizing node limit). Writes one <c>engine:outbound_content</c> trace line naming what was removed by type
+    /// name, each with its count. Never throws.
+    /// </summary>
+    public void TraceOutboundContent(IReadOnlyList<string> notes)
+    {
+        if (notes.Count == 0) return;
+        try
+        {
+            var parts = new List<string>();
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var note in notes)
+            {
+                if (counts.TryGetValue(note, out var seen)) counts[note] = seen + 1;
+                else
+                {
+                    counts[note] = 1;
+                    parts.Add(note);
+                }
+            }
+            var detail = string.Join("; ", parts.ConvertAll(p => counts[p] > 1 ? p + " x" + counts[p].ToString(CultureInfo.InvariantCulture) : p));
+            TraceFailure("outbound_content", Secrets.Sanitize(detail) ?? "", ToolErrorCodes.OutboundContentRemoved);
+        }
+        catch (Exception)
+        {
+            // Describing what was left out of a request must not fail the request.
+        }
+    }
+
     /// <summary>The trace line for an engine operation that failed outside a tool call (<paramref name="detail"/> is already sanitized).</summary>
     internal static TraceEntry FailureEntry(DateTimeOffset at, string sessionId, TurnState? turn, long revision, string operation, string detail,
         string errorCode = ToolErrorCodes.InternalError, string callId = "") => new()
