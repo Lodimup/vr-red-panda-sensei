@@ -97,18 +97,18 @@ public sealed class SenseiEngine : IAsyncDisposable {
 |---|---|---|---|---|---|---|
 | water | 水 | みず | mizu | water | default | no |
 | tea | お茶 | おちゃ | ocha | tea | default | no |
-| cup | コップ | コップ | koppu | cup | blue, red | no |
+| cup | コップ | コップ | koppu | cup | default | no |
 | apple | りんご | りんご | ringo | apple | default | no |
 | banana | バナナ | バナナ | banana | banana | default | no |
 | rice_ball | おにぎり | おにぎり | onigiri | rice ball | default | no |
-| book | 本 | ほん | hon | book | green, yellow | no |
+| book | 本 | ほん | hon | book | default | no |
 | pen | ペン | ペン | pen | pen | default | no |
 | bag | かばん | かばん | kaban | bag | default | yes |
 | box | 箱 | はこ | hako | box | default | yes |
 | key | 鍵 | かぎ | kagi | key | default | no |
 | umbrella | 傘 | かさ | kasa | umbrella | default | no |
 
-- **S11** The catalog has exactly these 12 entries. The first listed variant is the default. Sprites are 32×32 (PRD §7); the engine stores only ids.
+- **S11** The catalog has exactly these 12 entries. The first listed variant is the default. Object images are realistic high-resolution cardboard cutouts (PRD §7, RULING(Handler 2026-10-27)); the engine stores only ids.
 
 ## 5 Scene
 
@@ -437,6 +437,10 @@ These stories were added after an adversarial review of this spec. **Where one o
 - **S116** (S68, S87) `CorrectLastTranscriptAsync` while a turn runs behaves like `RunTurnAsync`: it cancels the running turn, waits for it to settle, then applies S99.
 - **S117** (S74, S99) A learner utterance is recorded when the turn starts, before any provider call, so a turn that fails (including `llm_not_configured`) still leaves its utterance; `/correct` after it supersedes that utterance and runs a new turn.
 - **S118** (S70) `--voice say` runs the program named `say` resolved through `PATH` (never an absolute path).
+
+### Object model simplification
+
+- **S119** (S11, S12, S20, S30, S35, S106) RULING(Handler 2026-10-28): one image per object, no colour variants. The catalog has no `variant` column and every catalog entry is exactly one object; `cup` and `book` are single objects like the rest. `ObjectInstance` and `SceneSnapshot` instances have no `variant` field; `spawn_objects` entries have no `variant` property (sending one → `invalid_arguments`, unknown property); `selector` is `{ "catalog_id": str, "property"?: {...} }` with no `variant`. The error code `unsupported_asset` no longer exists; S30b's "variant not in that entry's list" rule is removed. Where any earlier story mentions variants, read it without them.
 
 ## Decisions (differences from the PRD)
 
