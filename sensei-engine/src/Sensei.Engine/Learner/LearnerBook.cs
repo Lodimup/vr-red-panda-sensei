@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
 using Sensei.Engine.Storage;
+using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Learner;
 
@@ -37,28 +38,58 @@ public sealed class LearnerBook
         lock (_sync) return Clone(Profile);
     }
 
+    private volatile bool _dirty;
+
+    /// <summary>
+    /// True when a save failed (or never ran) and the profile in memory is ahead of the stored one. Every later write saves the whole
+    /// profile and clears it; disposal retries once more (S22).
+    /// </summary>
+    internal bool IsDirty => _dirty;
+
     /// <summary>Stamps <c>updated_at</c>, snapshots under the lock and saves through the store.</summary>
     public async Task SaveAsync(CancellationToken ct)
     {
-        await _saveGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            // Snapshot inside the save gate so writes reach the store in commit order.
-            LearnerProfile copy;
-            lock (_sync)
+            await _saveGate.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
-                Profile.UpdatedAt = _clock.GetUtcNow();
-                copy = Clone(Profile);
+                // Snapshot inside the save gate so writes reach the store in commit order.
+                LearnerProfile copy;
+                lock (_sync)
+                {
+                    Profile.UpdatedAt = _clock.GetUtcNow();
+                    copy = Clone(Profile);
+                }
+                await _store.SaveAsync(copy, ct).ConfigureAwait(false);
+                _dirty = false;
             }
-            await _store.SaveAsync(copy, ct).ConfigureAwait(false);
+            finally
+            {
+                _saveGate.Release();
+            }
         }
-        finally
+        catch (Exception ex)
         {
-            _saveGate.Release();
+            // The change in memory stays (S22); only the write is owed. The store is named as the source of the failure.
+            _dirty = true;
+            FaultCategories.Tag(ex, FaultCategories.ProfileStore);
+            throw;
         }
     }
 
-    internal Task DeleteAsync(string profileId, CancellationToken ct) => _store.DeleteAsync(profileId, ct);
+    internal async Task DeleteAsync(string profileId, CancellationToken ct)
+    {
+        try
+        {
+            await _store.DeleteAsync(profileId, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            FaultCategories.Tag(ex, FaultCategories.ProfileStore);
+            throw;
+        }
+    }
 
     /// <summary>Deep copy through the source-generated context.</summary>
     public static LearnerProfile Clone(LearnerProfile profile) => JsonCopy.Clone(profile, SenseiJsonContext.Default.LearnerProfile);

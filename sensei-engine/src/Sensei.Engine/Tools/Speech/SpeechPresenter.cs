@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Sensei.Engine.Learner;
 using Sensei.Engine.Speech;
 using Sensei.Engine.Text;
+using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Tools.Speech;
 
@@ -102,7 +103,9 @@ internal static class SpeechPresenter
         }
         catch (Exception ex)
         {
-            outcome = new SpeechOutcome(SpeechStatuses.Failed, ex.Message);
+            // S37d: the speech port's failure is a result, not an exception. Its text is not read except through the closed list of
+            // framework types whose message is a stored string (S77), so an exception with a hostile member cannot break the call.
+            outcome = new SpeechOutcome(SpeechStatuses.Failed, ExceptionSanitizer.Reason(ex, ctx.Secrets));
         }
 
         var presented = outcome.PresentedOf(plan.Segments.Count);

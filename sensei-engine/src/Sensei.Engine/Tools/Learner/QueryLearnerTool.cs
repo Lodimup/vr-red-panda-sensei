@@ -35,7 +35,7 @@ public sealed class QueryLearnerTool : SenseiTool<QueryLearnerArgs>
     protected override JsonTypeInfo<QueryLearnerArgs> ArgsTypeInfo => SenseiJsonContext.Default.QueryLearnerArgs;
 
     public override Task<ToolResult> ExecuteAsync(QueryLearnerArgs args, ToolContext context, CancellationToken ct) =>
-        Task.FromResult(context.Locked(() =>
+        Task.FromResult(context.Read(() =>
         {
             var profile = context.Profile;
             var targets = EvidenceRules.ComputeLabels(profile.Evidence).ToList();

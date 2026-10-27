@@ -18,7 +18,7 @@ namespace Sensei.Engine;
 /// </summary>
 internal sealed class EngineCore
 {
-    private readonly List<Action> _unscoped = new();
+    private readonly List<Pending> _unscoped = new();
     private readonly AsyncLocal<NotificationScope?> _scope = new();
     private readonly Queue<TraceEntry> _traceQueue = new();
     private readonly object _sinkGate = new();
@@ -99,16 +99,16 @@ internal sealed class EngineCore
     /// </summary>
     public Exception Translate(string operation, Exception ex)
     {
-        var safe = ExceptionSanitizer.ForHost(ex, Secrets, out var detail);
+        var safe = ExceptionSanitizer.ForHost(ex, Secrets, out var detail, operation, Options.ProfileId);
         if (detail is not null) TraceFailure(operation, detail);
         return safe;
     }
 
-    private void TraceFailure(string operation, string detail)
+    private void TraceFailure(string operation, string detail, string errorCode = ToolErrorCodes.InternalError, string callId = "")
     {
         try
         {
-            lock (Sync) EnqueueTrace(FailureEntry(Clock.GetUtcNow(), SessionId, CurrentTurn, World.Revision, operation, detail));
+            lock (Sync) EnqueueTrace(FailureEntry(Clock.GetUtcNow(), SessionId, CurrentTurn, World.Revision, operation, detail, errorCode, callId));
             DrainTraces();
         }
         catch (Exception)
@@ -117,19 +117,37 @@ internal sealed class EngineCore
         }
     }
 
+    /// <summary>
+    /// D4: a profile save that failed after the change it carries was already committed in memory. The change stays; this writes
+    /// <c>profile_save_failed</c> to the trace (the exception described by <see cref="ExceptionSanitizer.Describe"/>, so nothing foreign
+    /// is formatted) and the learner book keeps the profile dirty until a later write or disposal persists it. Never throws.
+    /// </summary>
+    public void TraceProfileSaveFailed(Exception ex, string callId = "")
+    {
+        try
+        {
+            TraceFailure("profile_save", ExceptionSanitizer.Describe(ex, Secrets), ToolErrorCodes.ProfileSaveFailed, callId);
+        }
+        catch (Exception)
+        {
+            // A failure to describe or trace the failure must not turn a committed call into an error.
+        }
+    }
+
     /// <summary>The trace line for an engine operation that failed outside a tool call (<paramref name="detail"/> is already sanitized).</summary>
-    internal static TraceEntry FailureEntry(DateTimeOffset at, string sessionId, TurnState? turn, long revision, string operation, string detail) => new()
+    internal static TraceEntry FailureEntry(DateTimeOffset at, string sessionId, TurnState? turn, long revision, string operation, string detail,
+        string errorCode = ToolErrorCodes.InternalError, string callId = "") => new()
     {
         At = at,
         SessionId = sessionId,
         TurnId = turn?.TurnId ?? 0,
         GenerationId = turn?.GenerationId ?? 0,
         Round = turn?.Round ?? 0,
-        CallId = "",
+        CallId = callId,
         Tool = "engine:" + operation,
         Arguments = detail,
         Status = ToolStatuses.Failure,
-        ErrorCode = ToolErrorCodes.InternalError,
+        ErrorCode = errorCode,
         Revision = revision,
     };
 
@@ -241,13 +259,15 @@ internal sealed class EngineCore
     /// </summary>
     public void ClearSessionState()
     {
+        // The epoch moves first: notifications queued before the reset describe effects it removes and are dropped (S87), while the
+        // reset's own notifications below belong to the new epoch.
+        ResetEpoch++;
         if (Tasks.Active is { } active)
         {
             active.Status = TaskStatuses.Abandoned;
             active.ClosedTurnId = CurrentTurnId;
             QueueTaskChanged(active);
         }
-        ResetEpoch++;
         Tasks.Clear();
         World.ClearForReset(CurrentTurnId);
         Assistance.Clear();
@@ -295,7 +315,11 @@ internal sealed class EngineCore
         return scope;
     }
 
-    /// <summary>Raises the current operation's queued notifications outside the lock, in commit order (S69).</summary>
+    /// <summary>
+    /// Raises the current operation's queued notifications outside the lock, in commit order (S69). A notification queued before a
+    /// reset describes an effect the reset removed, so it is dropped (S87); one whose commit survived an ordinary generation
+    /// transition is still raised.
+    /// </summary>
     public void FlushNotifications()
     {
         List<Action> pending;
@@ -303,7 +327,9 @@ internal sealed class EngineCore
         {
             var list = _scope.Value?.Items ?? _unscoped;
             if (list.Count == 0) return;
-            pending = new List<Action>(list);
+            pending = new List<Action>(list.Count);
+            foreach (var item in list)
+                if (item.Epoch == ResetEpoch) pending.Add(item.Raise);
             list.Clear();
         }
         foreach (var raise in pending) raise();
@@ -312,7 +338,10 @@ internal sealed class EngineCore
     /// <summary>Queues a notification raised by the current operation's <see cref="FlushNotifications"/>, after its final settlement and outside the lock (S69). Call under the lock, after the change committed.</summary>
     public void QueueNotification(Action raise) => Enqueue(raise);
 
-    private void Enqueue(Action raise) => (_scope.Value?.Items ?? _unscoped).Add(raise);
+    private void Enqueue(Action raise) => (_scope.Value?.Items ?? _unscoped).Add(new Pending(ResetEpoch, raise));
+
+    /// <summary>A queued notification and the reset epoch of the state it describes.</summary>
+    internal readonly record struct Pending(long Epoch, Action Raise);
 
     /// <summary>One operation's pending notifications.</summary>
     internal sealed class NotificationScope : IDisposable
@@ -326,7 +355,7 @@ internal sealed class EngineCore
             _previous = previous;
         }
 
-        public List<Action> Items { get; } = new();
+        public List<Pending> Items { get; } = new();
 
         public void Dispose() => _core._scope.Value = _previous;
     }
@@ -369,30 +398,42 @@ internal sealed class EngineCore
         }
     }
 
+    /// <summary>
+    /// S69: records a handler's exception as <c>event_handler_error</c>. The handler's exception is described by
+    /// <see cref="ExceptionSanitizer.Summary"/> (its type name, and its message only for the framework types whose message is a stored
+    /// string), and nothing in here can throw: the handler's failure is the host's, and reporting it must not fail the committed call.
+    /// </summary>
     private void OnEventHandlerError(string method, Exception ex)
     {
-        TurnState? turn;
-        long revision;
-        lock (Sync)
+        try
         {
-            turn = CurrentTurn;
-            revision = World.Revision;
+            TurnState? turn;
+            long revision;
+            lock (Sync)
+            {
+                turn = CurrentTurn;
+                revision = World.Revision;
+            }
+            var entry = new TraceEntry
+            {
+                At = Clock.GetUtcNow(),
+                SessionId = SessionId,
+                TurnId = turn?.TurnId ?? 0,
+                GenerationId = turn?.GenerationId ?? 0,
+                Round = turn?.Round ?? 0,
+                CallId = "",
+                Tool = "event:" + method,
+                Arguments = ExceptionSanitizer.Summary(ex, Secrets),
+                Status = ToolStatuses.Failure,
+                ErrorCode = ToolErrorCodes.EventHandlerError,
+                Revision = revision,
+            };
+            lock (Sync) EnqueueTrace(entry);
+            DrainTraces();
         }
-        var entry = new TraceEntry
+        catch (Exception)
         {
-            At = Clock.GetUtcNow(),
-            SessionId = SessionId,
-            TurnId = turn?.TurnId ?? 0,
-            GenerationId = turn?.GenerationId ?? 0,
-            Round = turn?.Round ?? 0,
-            CallId = "",
-            Tool = "event:" + method,
-            Arguments = Secrets.Sanitize(ex.GetType().Name + ": " + ex.Message) ?? "",
-            Status = ToolStatuses.Failure,
-            ErrorCode = ToolErrorCodes.EventHandlerError,
-            Revision = revision,
-        };
-        lock (Sync) EnqueueTrace(entry);
-        DrainTraces();
+            // Reporting a handler's failure must never become a second failure.
+        }
     }
 }

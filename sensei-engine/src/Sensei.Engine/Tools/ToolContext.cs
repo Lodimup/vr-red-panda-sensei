@@ -72,12 +72,17 @@ public sealed class ToolContext
 
     private bool _committed;
     private long _commitEpoch;
+    private ToolResult? _committedResult;
 
     /// <summary>
-    /// True when this mutating call's <see cref="Locked"/> body returned success while its generation was current — it committed —
-    /// and no reset has removed the session's effects since (S22, S87). Read under the lock.
+    /// True when a <see cref="Locked"/> body of this call returned success while its generation was current — it committed a change,
+    /// to the scene or to the profile — and no reset has removed the session's effects since (S22, S87). Such a call is never reported
+    /// <c>cancelled</c>. Read under the lock.
     /// </summary>
     internal bool CommitSurvives => _committed && _commitEpoch == _core.ResetEpoch;
+
+    /// <summary>The success the call's last committing <see cref="Locked"/> body returned; what the call reports when it ends after that commit without a result of its own. Read under the lock.</summary>
+    internal ToolResult? CommittedResult => _committedResult;
 
     /// <summary>Called by the task book (under the lock) when a Sensei commit completes the task: credits the call whose body is running.</summary>
     internal void NoteTaskCompleted() => CompletedTask = true;
@@ -89,12 +94,23 @@ public sealed class ToolContext
     public string NextSpeechUtteranceId() => _core.NextSpeechUtteranceId();
 
     /// <summary>
-    /// Runs <paramref name="body"/> under the engine lock after re-checking, in order, that the generation is current
-    /// (else <c>cancelled</c>) and, for mutating tools, that the scene is not stale (else <c>stale_scene</c>).
-    /// The body validates, then commits, and returns the result. A success returned by a mutating tool's body is the commit
-    /// (S22): the pipeline keeps it when the generation ends afterwards, and cancels it only when a reset removed it (S87).
+    /// The path of a body that changes something — the scene, the profile, an event or record that must follow the call. Runs
+    /// <paramref name="body"/> under the engine lock after re-checking, in order, that the generation is current (else
+    /// <c>cancelled</c>) and, for mutating tools, that the scene is not stale (else <c>stale_scene</c>). The body validates, then
+    /// commits, and returns the result. A success returned here is the commit (S22), for every tool, scene or profile: the pipeline
+    /// keeps it when the generation ends afterwards, and cancels it only when a reset removed it (S87). A body that only reads
+    /// uses <see cref="Read"/>, which marks nothing.
     /// </summary>
-    public ToolResult Locked(Func<ToolResult> body)
+    public ToolResult Locked(Func<ToolResult> body) => Run(body, commits: true);
+
+    /// <summary>
+    /// The path of a body that changes nothing the call must answer for (an inspection, a query, the gate that plans a speech whose
+    /// own presentation is committed under S89). Same checks as <see cref="Locked"/>, but the call is not marked committed, so a
+    /// generation that ends while it runs still ends it <c>cancelled</c>.
+    /// </summary>
+    public ToolResult Read(Func<ToolResult> body) => Run(body, commits: false);
+
+    private ToolResult Run(Func<ToolResult> body, bool commits)
     {
         lock (_core.Sync)
         {
@@ -109,10 +125,11 @@ public sealed class ToolContext
             try
             {
                 var result = body();
-                if (IsMutating && result.Status == ToolStatuses.Success)
+                if (commits && result.Status == ToolStatuses.Success)
                 {
                     _committed = true;
                     _commitEpoch = _core.ResetEpoch;
+                    _committedResult = result;
                 }
                 return result;
             }
@@ -177,8 +194,23 @@ public sealed class ToolContext
     /// <summary>Queues <c>OnSupportChanged</c> with the current settings (raised after the call). Under <see cref="Sync"/>.</summary>
     public void QueueSupportChanged() => _core.QueueSupportChanged();
 
-    /// <summary>Persists the profile (snapshot under the lock, write outside). Call after the committing lock is released.</summary>
-    public Task SaveProfileAsync(CancellationToken ct) => _core.Learner.SaveAsync(ct);
+    /// <summary>
+    /// Persists the profile (snapshot under the lock, write outside). Call after the committing lock is released, so the change is
+    /// already in memory. If the write fails the change stays and the call keeps its result: the failure is written to the trace as
+    /// <c>profile_save_failed</c>, the profile is marked dirty, and the next profile write and disposal retry it (S22). It never
+    /// turns a committed call into an error or a <c>cancelled</c>.
+    /// </summary>
+    public async Task SaveProfileAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _core.Learner.SaveAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _core.TraceProfileSaveFailed(ex, CallId);
+        }
+    }
 
     /// <summary>S88: after this call returns success, further calls of this generation are <c>cancelled</c>.</summary>
     public void EndGenerationAfterCall() => EndsGeneration = true;

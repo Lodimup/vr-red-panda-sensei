@@ -99,7 +99,7 @@ public sealed class SpeakTool : SenseiTool<SpeakArgs>
         var segments = args.Segments.Select(s => new SpeechSegment(s.Lang, s.Text, s.Reading, s.Romaji, s.Translation)).ToList();
         var characters = SpeechPresenter.CountCharacters(segments);
         SpeechPlan? plan = null;
-        var gate = context.Locked(() =>
+        var gate = context.Read(() =>
         {
             // S37c
             if (context.Turn.SpokenCharacters + characters > SpeechPresenter.MaxSpokenCharactersPerTurn)
