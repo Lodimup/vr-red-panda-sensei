@@ -45,16 +45,19 @@ public sealed class BoundaryTests
     // ------------------------------------------------------------------ S77: exceptions leave the engine redacted
 
     [Fact]
-    public async Task S77_a_secret_in_an_inner_exception_is_redacted_and_the_outer_type_is_kept()
+    public async Task S77_a_secret_in_an_inner_exception_never_reaches_the_host()
     {
         await using var t = await TestEngine.CreateAsync(knownSecrets: new[] { Secret });
         t.Store.FailSavesWith = new IOException("store write failed", new InvalidOperationException("inner " + Secret));
 
         var error = await Record.ExceptionAsync(() => t.Engine.SetStartingBandAsync("early_beginner"));
 
-        Assert.IsType<IOException>(error);
-        Assert.DoesNotContain(Secret, error!.ToString());
-        Assert.Contains("[redacted]", error.InnerException!.Message);
+        // The boundary (ruling: one SenseiEngineException, no inner) replaces the dependency's exception object.
+        var safe = Assert.IsType<SenseiEngineException>(error);
+        Assert.Equal(typeof(IOException).FullName, safe.OriginalType);
+        Assert.Equal("store write failed", safe.Message);
+        Assert.Null(safe.InnerException);
+        Assert.DoesNotContain(Secret, safe.ToString());
     }
 
     [Fact]
@@ -65,14 +68,16 @@ public sealed class BoundaryTests
 
         var error = await Record.ExceptionAsync(() => t.Engine.SetPreferenceByPlayerAsync(new SupportPatch { ShowRomaji = false }));
 
-        var safe = Assert.IsType<SanitizedException>(error);
+        var safe = Assert.IsType<SenseiEngineException>(error);
         Assert.Contains(nameof(DependencyFailure), safe.OriginalType);
+        Assert.Contains("[redacted]", safe.Message);
+        Assert.Null(safe.InnerException);
         Assert.DoesNotContain(Secret, safe.ToString());
         Assert.DoesNotContain(Secret, string.Join('|', safe.Data.Values.Cast<object?>()));
     }
 
     [Fact]
-    public async Task S77_an_exception_with_nothing_to_redact_is_rethrown_as_it_was()
+    public async Task S77_an_exception_with_nothing_to_redact_is_still_replaced_and_keeps_its_message()
     {
         await using var t = await TestEngine.CreateAsync(knownSecrets: new[] { Secret });
         var original = new IOException("disk full");
@@ -80,7 +85,10 @@ public sealed class BoundaryTests
 
         var error = await Record.ExceptionAsync(() => t.Engine.SetStartingBandAsync("advanced"));
 
-        Assert.Same(original, error);
+        var safe = Assert.IsType<SenseiEngineException>(error);
+        Assert.NotSame(original, error);
+        Assert.Equal("disk full", safe.Message);
+        Assert.Null(safe.InnerException);
     }
 
     [Fact]
