@@ -22,6 +22,8 @@ public sealed class LlmSettings
     public const string ApiKeyVariable = "SENSEI_LLM_API_KEY";
     public const string ModelVariable = "SENSEI_LLM_MODEL";
     public const string BaseUrlVariable = "SENSEI_LLM_BASE_URL";
+    public const string ReasoningEffortVariable = "SENSEI_LLM_REASONING_EFFORT";
+    public const string MaxOutputTokensVariable = "SENSEI_LLM_MAX_OUTPUT_TOKENS";
 
     public const string OpenRouter = "openrouter";
     public const string Meta = "meta";
@@ -29,8 +31,17 @@ public sealed class LlmSettings
 
     public const string DefaultModel = "meta/muse-spark-1.3-contributor";
 
+    /// <summary>S125: default reasoning effort. The model's default effort costs about 10 s per request; <c>low</c> about half of that.</summary>
+    public const string DefaultReasoningEffort = "low";
+
+    /// <summary>S125: default bound on the tokens of one response.</summary>
+    public const int DefaultMaxOutputTokens = 2000;
+
     /// <summary>Allowed provider names, in the order the SPEC lists them.</summary>
     public static IReadOnlyList<string> Providers { get; } = new[] { OpenRouter, Meta, OpenAiCompatible };
+
+    /// <summary>S125: allowed reasoning effort values, lowest first.</summary>
+    public static IReadOnlyList<string> ReasoningEfforts { get; } = new[] { "none", "low", "medium", "high" };
 
     /// <summary>
     /// Builds settings from explicit values (what Unity does with the player's key). Applies the same validation and
@@ -40,7 +51,9 @@ public sealed class LlmSettings
     /// <param name="apiKey">Bearer key.</param>
     /// <param name="model">Model id; the SPEC default when null or empty.</param>
     /// <param name="baseUrl">Override base URL; required for <c>openai_compatible</c>.</param>
-    public LlmSettings(string provider, string apiKey, string? model = null, string? baseUrl = null)
+    /// <param name="reasoningEffort">S125: <c>none</c>, <c>low</c>, <c>medium</c> or <c>high</c>; <c>low</c> when null or empty.</param>
+    /// <param name="maxOutputTokens">S125: bound on each response; 2000 when null. Must be positive.</param>
+    public LlmSettings(string provider, string apiKey, string? model = null, string? baseUrl = null, string? reasoningEffort = null, int? maxOutputTokens = null)
     {
         var p = Clean(provider);
         if (p is null || Array.IndexOf(Providers.ToArrayCompat(), p) < 0)
@@ -56,10 +69,20 @@ public sealed class LlmSettings
         if (key is null)
             throw new LlmConfigurationException($"{ApiKeyVariable} is not set");
 
+        var effort = Clean(reasoningEffort) ?? DefaultReasoningEffort;
+        if (Array.IndexOf(ReasoningEfforts.ToArrayCompat(), effort) < 0)
+            throw new LlmConfigurationException($"unknown {ReasoningEffortVariable} '{effort}'; allowed values: {string.Join(", ", ReasoningEfforts)}");
+
+        var tokens = maxOutputTokens ?? DefaultMaxOutputTokens;
+        if (tokens < 1)
+            throw new LlmConfigurationException($"{MaxOutputTokensVariable} must be a positive whole number");
+
         Provider = p;
         ApiKey = key;
         Model = Clean(model) ?? DefaultModel;
         BaseUrl = url;
+        ReasoningEffort = effort;
+        MaxOutputTokens = tokens;
     }
 
     public string Provider { get; }
@@ -67,6 +90,12 @@ public sealed class LlmSettings
     public string Model { get; }
 
     public string BaseUrl { get; }
+
+    /// <summary>S125: <c>none</c>, <c>low</c>, <c>medium</c> or <c>high</c>; sent with every request.</summary>
+    public string ReasoningEffort { get; }
+
+    /// <summary>S125: bound on the tokens of each response; sent with every request.</summary>
+    public int MaxOutputTokens { get; }
 
     /// <summary>The bearer key. Internal on purpose: nothing outside the engine and the CLI needs to read it back (S5, S77).</summary>
     internal string ApiKey { get; }
@@ -79,12 +108,28 @@ public sealed class LlmSettings
             Clean(Get(env, ProviderVariable)) ?? OpenRouter,
             Get(env, ApiKeyVariable) ?? "",
             Get(env, ModelVariable),
-            Get(env, BaseUrlVariable));
+            Get(env, BaseUrlVariable),
+            Get(env, ReasoningEffortVariable),
+            ParseTokens(Get(env, MaxOutputTokensVariable)));
     }
 
-    /// <summary>S5: <c>provider=&lt;p&gt; model=&lt;m&gt; base_url=&lt;u&gt; api_key=[set]</c>; the key never appears, in any field.</summary>
+    /// <summary>
+    /// S125: empty means the default; text that is not a whole number becomes 0 so the constructor rejects it with the
+    /// usual message, after the provider, base URL and key checks (S79 order).
+    /// </summary>
+    private static int? ParseTokens(string? text)
+    {
+        var clean = Clean(text);
+        if (clean is null) return null;
+        return int.TryParse(clean, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var n) ? n : 0;
+    }
+
+    /// <summary>
+    /// S5, S125: <c>provider=&lt;p&gt; model=&lt;m&gt; base_url=&lt;u&gt; reasoning_effort=&lt;e&gt; max_output_tokens=&lt;n&gt; api_key=[set]</c>;
+    /// the key never appears, in any field.
+    /// </summary>
     public override string ToString() =>
-        $"provider={Redact(Provider)} model={Redact(Model)} base_url={Redact(BaseUrl)} api_key=[set]";
+        $"provider={Redact(Provider)} model={Redact(Model)} base_url={Redact(BaseUrl)} reasoning_effort={Redact(ReasoningEffort)} max_output_tokens={MaxOutputTokens.ToString(CultureInfo.InvariantCulture)} api_key=[set]";
 
     // S126: a key shorter than the minimum is not searched for inside other fields; api_key=[set] never prints it either way.
     private string Redact(string text) => ApiKey.Length < Trace.Secrets.MinimumKnownSecretLength ? text : text.Replace(ApiKey, "[redacted]");
