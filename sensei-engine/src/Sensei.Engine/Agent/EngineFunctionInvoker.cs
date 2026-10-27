@@ -18,6 +18,9 @@ namespace Sensei.Engine.Agent;
 /// </summary>
 internal sealed class EngineFunctionInvoker
 {
+    /// <summary>Stands in for arguments the provider could not parse; deliberately not valid JSON (it is also what the trace shows).</summary>
+    internal const string UnparsedArguments = "<unparsed arguments>";
+
     private readonly EngineCore _core;
     private readonly Func<TurnScope?> _active;
     private readonly Action<TurnScope, string> _raiseState;
@@ -66,8 +69,8 @@ internal sealed class EngineFunctionInvoker
 
     /// <summary>
     /// The arguments exactly as the model sent them when the provider kept them (so duplicate names survive, S83);
-    /// otherwise rebuilt from the parsed dictionary; empty when the provider could not parse them (the pipeline answers
-    /// <c>invalid_arguments</c>, S21).
+    /// otherwise rebuilt from the parsed dictionary. When the provider could not parse them and kept no raw text, a marker that
+    /// is not JSON, so the pipeline answers <c>invalid_arguments</c> (S21, S85) instead of treating the call as having no arguments.
     /// </summary>
     internal static string ArgumentsText(FunctionCallContent call)
     {
@@ -76,7 +79,7 @@ internal sealed class EngineFunctionInvoker
             var text = raw.FunctionArguments?.ToString();
             if (text is not null) return text;
         }
-        if (call.Exception is not null) return "";
+        if (call.Exception is not null) return UnparsedArguments;
         IEnumerable<KeyValuePair<string, object?>> arguments = call.Arguments is { } parsed ? parsed : Array.Empty<KeyValuePair<string, object?>>();
         return SenseiTool.ArgumentsToJson(arguments);
     }
