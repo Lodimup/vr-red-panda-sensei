@@ -7,7 +7,10 @@ namespace Sensei.Engine.Tasks;
 /// <summary>A skill a task or attempt targets (SPEC §7, §9). Identity is <c>(dimension, key)</c> (S97).</summary>
 public sealed class SkillTarget
 {
+    [JsonRequired]
     public string Dimension { get; set; } = "";
+
+    [JsonRequired]
     public string Key { get; set; } = "";
     public string? Japanese { get; set; }
 
