@@ -40,7 +40,10 @@ internal static class OutboundMessages
                 IDictionary<string, object?>? arguments = null;
                 if (call.Arguments is not null)
                     arguments = (IDictionary<string, object?>)JsonRedaction.SanitizedValue(new Dictionary<string, object?>(call.Arguments), secrets)!;
-                return new FunctionCallContent(secrets.Sanitize(call.CallId) ?? "", secrets.Sanitize(call.Name) ?? "", arguments)
+                // A call the provider named with an empty string (S85) goes back under a placeholder: the wire format needs some name, and
+                // the call id is what pairs it with the engine result.
+                var name = secrets.Sanitize(call.Name);
+                return new FunctionCallContent(secrets.Sanitize(call.CallId) ?? "", string.IsNullOrEmpty(name) ? "unknown_tool" : name, arguments)
                 {
                     InformationalOnly = call.InformationalOnly,
                 };

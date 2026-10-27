@@ -385,11 +385,21 @@ public sealed class SenseiEngine : IAsyncDisposable
 
     private async Task<TurnResult> RunGatedAsync(Func<Task<Prepared>> start, CancellationToken ct)
     {
+        // S66: the caller's cancellation is a result, never an exception. A token that is already cancelled starts nothing and
+        // disturbs nothing; one that fires while this call waits for the lifecycle gate ends the wait the same way.
+        if (ct.IsCancellationRequested) return CancelledBeforeStart();
         using var scope = _core.OpenNotificationScope();
         long ticket;
         lock (_turnGate) ticket = ++_turnTicket;
         await CancelRunningTurnAsync().ConfigureAwait(false);
-        await _lifecycle.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await _lifecycle.WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return CancelledBeforeStart();
+        }
         var settled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         bool superseded;
         lock (_turnGate)
@@ -509,6 +519,14 @@ public sealed class SenseiEngine : IAsyncDisposable
         _core.CancelGeneration();
         await running.ConfigureAwait(false);
     }
+
+    /// <summary>The result of a turn that was cancelled before it started: nothing ran, so it names the state as it is.</summary>
+    private TurnResult CancelledBeforeStart() => new()
+    {
+        TurnId = _core.CurrentTurnId,
+        GenerationId = _core.CurrentGeneration,
+        Status = TurnStatuses.Cancelled,
+    };
 
     private static TurnResult Failed(TurnState turn, string code, string detail) => new()
     {

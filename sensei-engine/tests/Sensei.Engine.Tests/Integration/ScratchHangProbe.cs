@@ -135,3 +135,20 @@ public class ScratchEvents
         _out.WriteLine(string.Join(",", ev.Methods));
     }
 }
+
+public class ScratchBlankName
+{
+    private readonly ITestOutputHelper _out;
+    public ScratchBlankName(ITestOutputHelper o) { _out = o; }
+
+    [Fact]
+    public async Task Blank_name()
+    {
+        using var server = new Sensei.Engine.Tests.Agent.FakeChatServer().EnqueueToolCalls(("c1", "", "{}")).EnqueueText("done");
+        var client = Sensei.Engine.Llm.ChatClientFactory.Create(new Sensei.Engine.Llm.LlmSettings("openai_compatible", "key-1234567890", "m", server.BaseUrl));
+        await using var t = await TestEngine.CreateAsync(chatClient: client);
+        var r = await t.Engine.RunTurnAsync("hello");
+        _out.WriteLine($"{r.Status} {r.ErrorCode} {r.ErrorDetail}");
+        foreach (var req in server.Requests) _out.WriteLine(req.Body.Length > 1500 ? req.Body[^900..] : req.Body);
+    }
+}
