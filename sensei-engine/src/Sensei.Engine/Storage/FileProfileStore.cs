@@ -77,12 +77,29 @@ public sealed class FileProfileStore : IProfileStore
                 await stream.WriteAsync(bytes, 0, bytes.Length, ct).ConfigureAwait(false);
                 await stream.FlushAsync(ct).ConfigureAwait(false);
             }
-            if (File.Exists(path)) File.Replace(temp, path, null);
-            else File.Move(temp, path);
+            ReplaceOrMove(temp, path);
         }
         finally
         {
             if (File.Exists(temp)) File.Delete(temp);
+        }
+    }
+
+    /// <summary>Atomically puts <paramref name="temp"/> at <paramref name="path"/>, tolerating another writer creating or removing the target meanwhile.</summary>
+    private static void ReplaceOrMove(string temp, string path)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                if (File.Exists(path)) File.Replace(temp, path, null);
+                else File.Move(temp, path);
+                return;
+            }
+            catch (IOException) when (attempt < 8 && File.Exists(temp))
+            {
+                // The target appeared (Move) or vanished (Replace) between the check and the call: try again.
+            }
         }
     }
 
