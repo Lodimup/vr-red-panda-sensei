@@ -22,7 +22,7 @@ internal static class CycleProcess
     {
         var project = ProbeAssembly();
         Assert.True(File.Exists(project), "Build the solution, which also builds Sensei.Engine.CycleProbe, first.");
-        var host = Path.Combine(Environment.GetEnvironmentVariable("DOTNET_ROOT") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet"), "dotnet");
+        var host = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? Path.Combine(Environment.GetEnvironmentVariable("DOTNET_ROOT") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet"), "dotnet");
         var start = new ProcessStartInfo(host)
         {
             UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
