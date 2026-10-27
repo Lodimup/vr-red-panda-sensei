@@ -41,7 +41,7 @@ public sealed class S126RedactionLengthTests
     {
         var settings = new LlmSettings("openrouter", key);
         Assert.Equal(
-            "provider=openrouter model=meta/muse-spark-1.3-contributor base_url=https://openrouter.ai/api/v1 reasoning_effort=low max_output_tokens=2000 api_key=[set]", // S125 adds the effort and the bound
+            "provider=openrouter model=meta/muse-spark-1.3-contributor base_url=https://openrouter.ai/api/v1 reasoning_effort=low max_output_tokens=2000 api_key=[set]",
             settings.ToString());
     }
 

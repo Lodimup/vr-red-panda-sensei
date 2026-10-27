@@ -105,6 +105,12 @@ public sealed class Secrets
     /// <summary>No known secrets; the credential pattern still applies.</summary>
     public static Secrets None { get; } = new(null);
 
+    /// <summary>
+    /// A set that knows every secret of this one and of <paramref name="other"/> (each value once). Used by the outbound byte guard, which
+    /// starts with the client's key and learns the engine's known secrets when an engine attaches to it.
+    /// </summary>
+    internal Secrets Union(Secrets other) => new(_known.Concat(other._known));
+
     /// <summary>True when <paramref name="text"/> contains a known secret or a credential-pattern match (→ <c>looks_like_credential</c>).</summary>
     public bool Check(string? text)
     {

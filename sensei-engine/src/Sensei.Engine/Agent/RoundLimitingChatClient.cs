@@ -65,7 +65,7 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
             var text = message.Text;
             if (!string.IsNullOrWhiteSpace(text)) scope.AssistantText.Add(text);
         }
-        WireCallRecovery.Recover(response);
+        WireCallRecovery.Recover(response, _core.Pipeline.ReserveEngineCallId);
         RegisterUnknownTools(response);
         return response;
     }
@@ -80,8 +80,11 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
     /// <summary>S63: fresh instructions and the full learner block for this request; history keeps only the transcript (S129).</summary>
     private (List<ChatMessage> Messages, ChatOptions Options) Prepare(IEnumerable<ChatMessage> messages, ChatOptions? options, TurnScope scope)
     {
-        // S77: the copy that leaves the engine is sanitized as a whole; the stored history is not touched.
-        var list = OutboundMessages.Sanitized(messages, _core.Secrets);
+        // S77, S130: the copy that leaves the engine holds only text, function calls and function results, all sanitized; the stored
+        // history is not touched. What the allow-list took out is traced by type name.
+        var notes = new List<string>();
+        var list = OutboundMessages.Sanitized(messages, _core.Secrets, notes);
+        _core.TraceOutboundContent(notes);
         var prepared = options?.Clone() ?? new ChatOptions();
         prepared.Instructions = _core.Secrets.Sanitize(_renderer.RenderInstructions(scope));
 

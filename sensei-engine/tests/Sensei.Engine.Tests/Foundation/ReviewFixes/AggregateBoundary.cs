@@ -12,7 +12,7 @@ public sealed class AggregateBoundary
     [InlineData("cycle")]
     public async Task S77_boundary_handles_aggregate_graph_without_crashing_the_host(string mode)
     {
-        var start = new ProcessStartInfo(Path.Combine(Environment.GetEnvironmentVariable("DOTNET_ROOT")!, "dotnet"))
+        var start = new ProcessStartInfo((Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? Path.Combine(Environment.GetEnvironmentVariable("DOTNET_ROOT")!, "dotnet")))
         {
             RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
         };

@@ -11,8 +11,9 @@ namespace Sensei.Engine.Agent;
 /// an earlier turn left behind is paid for again on every round of every later turn. For turns that are over:
 /// a tool result shrinks to what a later turn can still use (status, error code, detail, affected ids), because the
 /// data a call returned (the scene, the learner profile, a task's full view) is in the current state or can be asked
-/// for again; and the assistant's plain text, which nobody ever heard, goes. The learner messages, the assistant's
-/// tool calls with their arguments (what Sensei said and did) and the one-result-per-call pairing (S65, S85) stay.
+/// for again. The learner messages, the assistant's tool calls with their arguments (what Sensei said and did), the
+/// assistant's own text (S130 sends what the provider answered back to it, cleaned) and the one-result-per-call
+/// pairing (S65, S85) stay.
 /// </summary>
 internal static class HistoryCompactor
 {
@@ -20,26 +21,12 @@ internal static class HistoryCompactor
     public static List<ChatMessage> Compact(IReadOnlyList<ChatMessage> messages)
     {
         var result = new List<ChatMessage>(messages.Count);
-        foreach (var message in messages)
-        {
-            var compacted = CompactMessage(message);
-            if (compacted is not null) result.Add(compacted);
-        }
+        foreach (var message in messages) result.Add(CompactMessage(message));
         return result;
     }
 
-    private static ChatMessage? CompactMessage(ChatMessage message)
+    private static ChatMessage CompactMessage(ChatMessage message)
     {
-        if (message.Role == ChatRole.Assistant)
-        {
-            var contents = message.Contents.Where(c => c is not TextContent and not TextReasoningContent).ToList();
-            if (contents.Count == message.Contents.Count) return message;
-            if (contents.Count == 0) return null;
-            var copy = message.Clone();
-            copy.Contents = contents;
-            return copy;
-        }
-
         if (message.Role == ChatRole.Tool && message.Contents.OfType<FunctionResultContent>().Any())
         {
             var copy = message.Clone();

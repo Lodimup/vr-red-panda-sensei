@@ -85,6 +85,18 @@ public sealed class AgentErrorTests
     [InlineData(HttpStatusCode.PaymentRequired, "quota_exceeded")]
     [InlineData(HttpStatusCode.TooManyRequests, "quota_exceeded")]
     [InlineData(HttpStatusCode.InternalServerError, "provider_error")]
+    public async Task S67_a_client_result_exception_built_from_a_response_with_a_status_maps_the_same_way(HttpStatusCode status, string expected)
+    {
+        var result = await FailWith(new ClientResultException("failed", new FakePipelineResponse((int)status)));
+        Assert.Equal(expected, result.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, "auth_failed")]
+    [InlineData(HttpStatusCode.Forbidden, "auth_failed")]
+    [InlineData(HttpStatusCode.PaymentRequired, "quota_exceeded")]
+    [InlineData(HttpStatusCode.TooManyRequests, "quota_exceeded")]
+    [InlineData(HttpStatusCode.InternalServerError, "provider_error")]
     public async Task S67_an_http_request_exception_with_a_status_maps_the_same_way(HttpStatusCode status, string expected)
     {
         var result = await FailWith(new HttpRequestException("failed", null, status));

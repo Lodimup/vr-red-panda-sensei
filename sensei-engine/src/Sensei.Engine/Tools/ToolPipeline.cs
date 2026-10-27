@@ -364,15 +364,13 @@ internal sealed class ToolPipeline
 
     private JsonElement SanitizeElement(JsonElement element) => JsonRedaction.Sanitized(element, _core.Secrets);
 
-    /// <summary>Sanitized arguments text: values and names cleaned when it parses (duplicates kept), else the raw text redacted.</summary>
-    private string SanitizeJsonText(string json)
-    {
-        if (ArgumentSchema.TryParse(json, out var element)) return SanitizedJson(element);
-        return _core.Secrets.Sanitize(json) ?? "";
-    }
-
-    /// <summary>Compact JSON of <paramref name="element"/> with every string value and property name sanitized (S77).</summary>
-    private string SanitizedJson(JsonElement element) => JsonRedaction.SanitizedText(element, _core.Secrets);
+    /// <summary>
+    /// S131: the arguments text a trace carries. The provider's text is parsed (iteratively, whatever its depth, up to a node cap) and
+    /// every string value and property name is sanitized as the parser unescaped it, so a JSON-escaped key is found; text that cannot
+    /// be parsed that way is replaced as a whole. The raw provider text never reaches a trace, so never a disk. The strict
+    /// tool-argument parser (32 levels) is not used here: a call it rejects is still traced.
+    /// </summary>
+    private string SanitizeJsonText(string json) => JsonRedaction.SanitizedArgumentsText(json, _core.Secrets);
 
     private static JsonElement WithTaskStatus(JsonElement? data)
     {
@@ -386,6 +384,15 @@ internal sealed class ToolPipeline
     private static string Canonical(string? json) => CanonicalJson.TryCanonicalize(json) ?? ("raw:" + json);
 
     private string NextAutoId() => AutoPrefix + (++_autoCounter).ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// A call id of the engine's own (<c>auto-N</c>), from the same counter as the ids the pipeline assigns itself, so it is unique in this
+    /// engine instance. A call that arrives under such an id is answered <c>invalid_arguments</c> without executing (S82).
+    /// </summary>
+    public string ReserveEngineCallId()
+    {
+        lock (_core.Sync) return NextAutoId();
+    }
 
     private static ToolResult Fail(string code, string detail) => new() { Status = ToolStatuses.Failure, ErrorCode = code, Detail = detail };
 

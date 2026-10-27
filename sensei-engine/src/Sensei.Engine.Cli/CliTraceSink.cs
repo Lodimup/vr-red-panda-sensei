@@ -27,7 +27,9 @@ internal sealed class CliTraceSink : ITraceSink
 
     public void Write(TraceEntry entry)
     {
-        var line = JsonSerializer.Serialize(entry, SenseiJsonContext.Default.TraceEntry);
+        // D6: the line is sanitized in its final serialized form (parsed, every string and property name cleaned after unescaping,
+        // written again), whatever the engine did to the entry before; the disk never sees the original.
+        var line = JsonRedaction.SanitizedJsonLine(JsonSerializer.Serialize(entry, SenseiJsonContext.Default.TraceEntry), _output.Secrets);
         lock (_gate)
         {
             Directory.CreateDirectory(_directory);

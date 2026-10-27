@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Sensei.Engine.Events;
+using Sensei.Engine.Llm;
 using Sensei.Engine.Speech;
 
 namespace Sensei.Engine.Agent;
@@ -38,7 +39,7 @@ internal sealed class SenseiAgent : IAgentRunner
         {
             var dynamicTools = new List<AITool>();
             var offered = core.Tools.Standard;
-            var limiter = new RoundLimitingChatClient(provider, core, _renderer, () => _active, dynamicTools, offered.Select(t => t.Name), RaiseState);
+            var limiter = new RoundLimitingChatClient(Guarded(provider, core), core, _renderer, () => _active, dynamicTools, offered.Select(t => t.Name), RaiseState);
             var persisted = new ChatClientBuilder(limiter).UsePerServiceCallChatHistoryPersistence().Build();
             var invoker = new EngineFunctionInvoker(core, () => _active, RaiseState);
             var functions = new FunctionInvokingChatClient(persisted)
@@ -69,6 +70,27 @@ internal sealed class SenseiAgent : IAgentRunner
                 AllowConcurrentInvocation = false,
             });
         }
+    }
+
+    /// <summary>
+    /// D6: the client the round limiter talks to. A client built by <see cref="ChatClientFactory"/> already ends in the byte guard of its
+    /// request pipeline (it is found through <c>GetService</c>, also through wrappers that forward it); the engine only tells that guard
+    /// which secrets it knows. Any other client gets the serialized-request guard.
+    /// </summary>
+    private static IChatClient Guarded(IChatClient provider, EngineCore core)
+    {
+        OutboundGuard? guard = null;
+        try
+        {
+            guard = provider.GetService(typeof(OutboundGuard)) as OutboundGuard;
+        }
+        catch (Exception)
+        {
+            // A client that cannot be asked is a client without a guard.
+        }
+        if (guard is null) return new SerializedRequestGuard(provider, core.Secrets);
+        guard.Attach(core.Secrets);
+        return provider;
     }
 
     public async Task<TurnResult> RunTurnAsync(AgentTurnRequest request, CancellationToken ct)
@@ -110,6 +132,8 @@ internal sealed class SenseiAgent : IAgentRunner
         {
             status = TurnStatuses.Failed;
             (errorCode, errorDetail) = ProviderErrors.Map(ex, _core.Secrets);
+            // D6: a request the outbound guard refused to send is a provider_error whose cause is recorded in the trace.
+            if (ProviderErrors.OutboundRejection(ex) is { } rejected) _core.TraceOutboundRejected(rejected);
         }
         finally
         {

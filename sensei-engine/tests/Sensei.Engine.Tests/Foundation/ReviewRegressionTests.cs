@@ -70,7 +70,7 @@ public sealed class ReviewRegressionTests
         var r = await t.CallAsync("test_probe", json);
         Assert.Equal(ToolErrorCodes.InvalidArguments, r.ErrorCode);
         var entry = t.Trace.Entries.Single();
-        Assert.Contains("\uFFFD", entry.Arguments);
+        Assert.Equal("\"[unparseable arguments]\"", entry.Arguments);
         Assert.NotNull(System.Text.Json.JsonSerializer.Serialize(entry, Sensei.Engine.Json.SenseiJsonContext.Default.TraceEntry));
     }
 

@@ -53,11 +53,11 @@ public sealed class HistoryCompactionTests
     }
 
     [Fact]
-    public void Plain_assistant_text_goes_but_the_calls_and_the_learner_stay()
+    public void The_calls_the_assistant_text_and_the_learner_stay()
     {
         var compacted = HistoryCompactor.Compact(OneTurn());
 
-        Assert.DoesNotContain(compacted, m => m.Contents.OfType<TextContent>().Any(t => t.Text.Contains("planning") || t.Text == "done"));
+        Assert.Contains(compacted, m => m.Contents.OfType<TextContent>().Any(t => t.Text == "done")); // S130: the provider's own words go back, cleaned
         Assert.Equal("spawn_objects", compacted.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Single().Name);
         Assert.Contains("learner_transcript: hi", compacted[0].Text);
         Assert.Equal(ChatRole.User, compacted[0].Role);
@@ -115,7 +115,6 @@ public sealed class HistoryCompactionTests
         var json = ResultJson(result);
         Assert.Equal("success", StatusOf(result));
         Assert.False(json.TryGetProperty("revision", out _));
-        Assert.DoesNotContain(last.Messages, m => m.Role == ChatRole.Assistant && m.Text == "first done");
         // The first turn's own second request still saw the full result.
         Assert.True(ResultJson(ResultsIn(chat.Requests[1]).Single()).TryGetProperty("revision", out _));
     }

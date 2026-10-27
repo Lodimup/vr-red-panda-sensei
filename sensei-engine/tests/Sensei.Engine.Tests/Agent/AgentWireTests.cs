@@ -105,7 +105,7 @@ public sealed class AgentWireTests
         Assert.Equal("invalid_arguments", content.GetProperty("error_code").GetString());
         Assert.Equal("malformed JSON", content.GetProperty("detail").GetString());
         Assert.Equal(0, probe.Executions);
-        Assert.Equal("{\"action\": \"ok\", ", Assert.Single(trace.Entries).Arguments);
+        Assert.Equal("\"[unparseable arguments]\"", Assert.Single(trace.Entries).Arguments);
     }
 
     [Fact]

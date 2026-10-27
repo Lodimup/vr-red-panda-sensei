@@ -77,6 +77,12 @@ public static class ToolErrorCodes
     /// <summary>Trace-only code for a profile save that failed after the change it carried was committed in memory; the change stays and the save is retried (S22).</summary>
     public const string ProfileSaveFailed = "profile_save_failed";
 
+    /// <summary>Trace-only code for a provider request built without some content of the conversation (S130).</summary>
+    public const string OutboundContentRemoved = "outbound_content_removed";
+
+    /// <summary>Trace-only code for a provider request that was not sent because its bytes could not be checked (D6).</summary>
+    public const string OutboundRejected = "outbound_rejected";
+
     /// <summary>All 21 failure codes of SPEC §6, in SPEC order.</summary>
     public static IReadOnlyList<string> All { get; } = new[]
     {
