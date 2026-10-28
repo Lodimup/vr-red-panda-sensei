@@ -17,8 +17,8 @@ namespace Sensei.App
         internal static GameObject Surface(Transform parent, string name, Vector3 position, Vector3 size)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube); go.name = name; go.transform.SetParent(parent, false); go.transform.localPosition = position; go.transform.localScale = size;
-            go.GetComponent<Renderer>().material = new Material(Resources.Load<Material>("SenseiCard")); go.GetComponent<Renderer>().material.color = new Color(.12f, .10f, .09f);
-            Object.Destroy(go.GetComponent<Collider>()); return go;
+            var material = new Material(Resources.Load<Material>("SenseiCard")); material.color = new Color(.12f, .10f, .09f); material.renderQueue = 2980; go.GetComponent<Renderer>().sharedMaterial = material;
+            var collider = go.GetComponent<Collider>(); if (Application.isPlaying) Object.Destroy(collider); else Object.DestroyImmediate(collider); return go;
         }
     }
 }

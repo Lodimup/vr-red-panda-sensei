@@ -29,7 +29,7 @@ namespace Sensei.App
         private TextMeshPro Button(string label, float y, TMP_FontAsset? font, Action action)
         {
             var go = new GameObject(label); go.transform.SetParent(transform, false); go.transform.localPosition = new Vector3(0, y, -.015f);
-            PanelText.Surface(go.transform, "Button background", new Vector3(0, 0, .001f), new Vector3(.5f, .046f, .004f)).GetComponent<Renderer>().material.color = new Color(.27f, .24f, .21f);
+            var surface = PanelText.Surface(go.transform, "Button background", new Vector3(0, 0, .001f), new Vector3(.5f, .046f, .004f)).GetComponent<Renderer>(); surface.sharedMaterial.color = new Color(.27f, .24f, .21f); surface.sharedMaterial.renderQueue = 2990;
             var box = go.AddComponent<BoxCollider>(); box.size = new Vector3(.5f, .048f, .02f); go.AddComponent<MenuButton>().Press = () => { if (label != "Reset progress") { state.CancelReset(); reset.text = "Reset progress"; } action(); };
             var text = PanelText.Create(go.transform, "Label", new Vector3(0, 0, -.005f), new Vector2(.49f, .048f), 0.20f, font); text.text = label; return text;
         }
