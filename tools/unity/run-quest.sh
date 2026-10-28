@@ -21,7 +21,7 @@ cleanup() {
 }
 trap cleanup EXIT
 "${adb_device[@]}" shell am broadcast -a com.oculus.vrpowermanager.prox_close >/dev/null
-# RULING(Handler 2026-10-28): pause the boundary for automated desk runs, restore it on exit.
+# Orchestrator decision 2026-10-28: pause the boundary for automated desk runs, restore it on exit.
 "${adb_device[@]}" shell setprop debug.oculus.guardian_pause 1
 activity=$("${adb_device[@]}" shell cmd package resolve-activity --brief "$package" | tr -d '\r' | tail -1)
 case "$activity" in "$package/"*) ;; *) echo "Cannot resolve launch activity: $activity" >&2; exit 1;; esac
@@ -30,7 +30,7 @@ RPS_LAUNCH_MONOTONIC=$(uv run --no-project python -c 'import time; print(time.mo
 "${adb_device[@]}" shell am start -n "$activity"
 sleep 2
 if "${adb_device[@]}" shell dumpsys activity activities | grep -Eq 'topResumedActivity=.*(LaunchCheck|GuardianDialog)'; then
-  # RULING(Handler 2026-10-28): clear a stale Quest system dialog, then retry the launch once.
+  # Orchestrator decision 2026-10-28: clear a stale Quest system dialog, then retry the launch once.
   "${adb_device[@]}" shell am force-stop com.oculus.vrshell
   sleep 12
   "${adb_device[@]}" shell am broadcast -a com.oculus.vrpowermanager.prox_close >/dev/null

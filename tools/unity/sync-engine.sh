@@ -8,7 +8,7 @@ trap 'rm -rf "$scratch"' EXIT
 publish="$scratch/publish"
 renamed="$scratch/renamed"
 dotnet publish "$repo/sensei-engine/src/Sensei.Engine" -c Release -f netstandard2.1 -o "$publish"
-# RULING(Handler 2026-10-28): rename copies of assemblies Unity itself supplies.
+# Orchestrator decision 2026-10-28: rename copies of assemblies Unity itself supplies.
 # The first seven occur in the Unity 6000.6 netstandard2.1 reference pack;
 # the annotations facade is also shipped by Unity's Mono runtime.
 clashes=(

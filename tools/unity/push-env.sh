@@ -21,7 +21,7 @@ api_key=$SENSEI_LLM_API_KEY
 elif [[ -t 0 ]]; then
 read -rs -p 'OpenRouter API key: ' api_key; echo >&2
 else
-# RULING(Handler 2026-10-28): read only this key; never echo or bundle it.
+# Orchestrator decision 2026-10-28: read only this key; never echo or bundle it.
 api_key=$(uv run --no-project python -c 'import pathlib,tomllib; value=tomllib.loads((pathlib.Path.home()/"KEYS.toml").read_text())["openrouter_deepseek"]["api_key"]; assert value and "\n" not in value and "\r" not in value; print(value,end="")')
 fi
 [[ -n "$api_key" && "$api_key" != *$'\n'* && "$api_key" != *$'\r'* ]] || { echo 'Invalid or empty API key' >&2; exit 2; }

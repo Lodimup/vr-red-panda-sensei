@@ -62,7 +62,7 @@ namespace Sensei.Voice
 
     public sealed class LocalTts : IDisposable
     {
-        // RULING(Handler 2026-10-28): one supplied preset for both languages.
+        // Orchestrator decision 2026-10-28: one supplied preset for both languages.
         public const int VoicePreset = 0;
         public const int QualitySteps = 8;
         private OfflineTts native;
@@ -121,7 +121,7 @@ namespace Sensei.Voice
             int chars = 0;
             for (int i = 0; i < text.Length; ++i, ++chars)
                 if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) ++i;
-            // RULING(Handler 2026-10-28): preserve SPEC section 8 scalar segment limits.
+            // Orchestrator decision 2026-10-28: preserve SPEC section 8 scalar segment limits.
             if (chars > (lang == "ja" ? 60 : 160)) throw new ArgumentException("speech_limit_exceeded", nameof(text));
             return worker.Enqueue(() =>
             {

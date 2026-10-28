@@ -15,7 +15,7 @@ fetch() {
   tar -xjf "$CACHE/$name" -C "$CACHE"
 }
 TTS=sherpa-onnx-supertonic-3-tts-int8-2026-05-11
-# RULING(Handler 2026-10-28): ship SenseVoice-nano only; the classic model is not bundled.
+# Orchestrator decision 2026-10-28: ship SenseVoice-nano only; the classic model is not bundled.
 NANO=sherpa-onnx-sense-voice-funasr-nano-int8-2025-12-17
 fetch "$TTS.tar.bz2" "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/$TTS.tar.bz2" 82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427
 fetch "$NANO.tar.bz2" "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$NANO.tar.bz2" 257936ea9a64cbe33200274e6367fc26d373ff6ca58b996b15108ffd6b9f6148

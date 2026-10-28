@@ -13,7 +13,7 @@ The adapter uses supplied preset **0** for both Japanese and English, eight qual
 
 ## SenseVoiceSmall INT8
 
-RULING(Handler 2026-10-28): use the newest classic SenseVoice archive and enable in-graph ITN.
+Orchestrator decision 2026-10-28: use the newest classic SenseVoice archive and enable in-graph ITN.
 [Converted model archive](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2); SHA256 `7305f7905bfcf77fa0b39388a313f3da35c68d971661a65475b56fb2162c8e63`.
 [SenseVoiceSmall model card](https://huggingface.co/FunAudioLLM/SenseVoiceSmall) lists Japanese and English and names the [FunASR Model Open Source License Agreement](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE), reproduced below. It requires source and author attribution and preservation of the model name. The weights are a separate license from the sherpa and ONNX Runtime code.
 

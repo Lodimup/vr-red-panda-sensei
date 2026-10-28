@@ -108,7 +108,7 @@ try
     Directory.CreateDirectory(destination);
     foreach (var (originalName, assembly) in assemblies)
     {
-        // RULING(Handler 2026-10-28): keep engine source intact and isolate Unity's conflicting assemblies by identity.
+        // Orchestrator decision 2026-10-28: keep engine source intact and isolate Unity's conflicting assemblies by identity.
         if (clashes.Contains(originalName)) assembly.Name.Name = "Sensei.Vendor." + originalName;
         assembly.Name.PublicKey = Array.Empty<byte>();
         assembly.Name.HasPublicKey = false;

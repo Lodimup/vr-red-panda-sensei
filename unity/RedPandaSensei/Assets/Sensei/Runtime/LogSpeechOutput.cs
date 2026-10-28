@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Sensei.Unity
 {
-    // RULING(Handler 2026-10-28): the sole temporary port until the voice slice.
+    // Orchestrator decision 2026-10-28: the sole temporary port until the voice slice.
     public sealed class LogSpeechOutput : ISpeechOutput
     {
         private readonly bool debugText;
