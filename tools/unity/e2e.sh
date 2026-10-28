@@ -38,7 +38,7 @@ trap cleanup EXIT
 "${adb_device[@]}" install -r "$repo/unity/RedPandaSensei/Build/RedPandaSensei.apk" >/dev/null
 "${adb_device[@]}" shell am force-stop "$package"
 if [[ $scenario == a01 ]]; then
-  if "${adb_device[@]}" shell test -d "$files/profiles"; then "${adb_device[@]}" pull "$files/profiles" "$out/profile-backup" >/dev/null; "${adb_device[@]}" shell rm -rf "$files/profiles"; fi
+  if "${adb_device[@]}" shell test -d "$files/profiles"; then backup="$out/profile-backup-$(date +%Y%m%d-%H%M%S)"; [[ ! -e "$backup" ]] || { echo "Profile backup already exists: $backup" >&2; exit 1; }; "${adb_device[@]}" pull "$files/profiles" "$backup" >/dev/null; "${adb_device[@]}" shell rm -rf "$files/profiles"; fi
 fi
 bash "$repo/tools/unity/push-env.sh" --test-script "$scenario.txt"
 "${adb_device[@]}" push "$repo/tools/unity/e2e/$scenario.txt" "$files/$scenario.txt" >/dev/null
