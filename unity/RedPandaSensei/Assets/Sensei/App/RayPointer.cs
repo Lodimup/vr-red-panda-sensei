@@ -11,6 +11,7 @@ namespace Sensei.App
             hand = source; line = gameObject.AddComponent<LineRenderer>(); line.positionCount = 2; line.startWidth = 0.003f; line.endWidth = 0.001f;
             line.material = new Material(Resources.Load<Material>("SenseiLine")); line.startColor = Color.white; line.endColor = Color.white;
         }
+        public MenuButton? HitButton() => Physics.Raycast(hand.position, hand.forward, out var hit, 3f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) ? hit.collider.GetComponentInParent<MenuButton>() : null;
         public ObjectCardView? HitCard()
         {
             return Physics.Raycast(hand.position, hand.forward, out var hit, 3f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) ? hit.collider.GetComponentInParent<ObjectCardView>() : null;
