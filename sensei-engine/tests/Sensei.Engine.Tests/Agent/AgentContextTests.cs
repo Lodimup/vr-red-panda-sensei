@@ -122,6 +122,20 @@ public sealed class AgentContextTests
     }
 
     [Fact]
+    public async Task S62_request_tasks_describe_delivery_and_batch_the_attempt()
+    {
+        var chat = new ScriptedChatClient().EnqueueText("ok");
+        await using var t = await EngineAsync(chat);
+        await t.Engine.RunTurnAsync("hi");
+        var text = Instructions(chat);
+
+        Assert.Contains("use only `in_region` for the requested `object_id` in `learner_hand`, never `selected`", text);
+        Assert.Contains("`move_object(water_1 to learner_hand, fulfill_request)` + `record_attempt(their words)`", text);
+        Assert.Contains("`spawn_objects` + `record_attempt`, request 2 = `move_object` with the new id", text);
+        Assert.Contains("At most one `start_challenge` per response", text);
+    }
+
+    [Fact]
     public async Task S88_the_system_prompt_tells_sensei_to_speak_any_recap_before_end_activity()
     {
         var chat = new ScriptedChatClient().EnqueueText("ok");
