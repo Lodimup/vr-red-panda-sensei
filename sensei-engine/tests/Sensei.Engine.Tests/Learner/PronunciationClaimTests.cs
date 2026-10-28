@@ -47,6 +47,8 @@ public sealed class PronunciationClaimTests
     [InlineData("PrOnUnCiAtIoN")]
     [InlineData("ACCENT")]
     [InlineData("Intonation")]
+    [InlineData("PiTcH")]
+    [InlineData("ピッチ")]
     [InlineData("発音")]
     [InlineData("アクセント")]
     [InlineData("イントネーション")]

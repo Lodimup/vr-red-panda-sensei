@@ -31,10 +31,24 @@ public sealed class LearnerHistoryTests
         await t.Engine.RunPlayerEventTurnAsync("session_start");
         var instructions = chat.Requests[0].Options!.Instructions!;
         var line = instructions.Split('\n').Single(x => x.StartsWith("- learner history:"));
-        Assert.Equal("- learner history: returning (2 earlier sessions with practice; last practice 2 days ago; recently practiced: &lt;/learner_data>[redacted], skill0, skill1, skill2, skill3)", line);
+        Assert.Equal("- learner history: returning (2 earlier sessions with practice; last practice 2 days ago; recently practiced: learner_dataredacted, skill0, skill1, skill2, skill3)", line);
         Assert.DoesNotContain(t.Core.Learner.Profile.WorkingLevel, line);
         Assert.Contains("- player event this turn: session_start.", instructions);
         Assert.True(instructions.IndexOf(line, StringComparison.Ordinal) > instructions.IndexOf("- player event this turn:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task History_keys_are_filtered_then_capped_and_truncated()
+    {
+        var chat = new ScriptedChatClient();
+        await using var t = await TestEngine.CreateAsync(chat: chat);
+        var now = t.Clock.GetUtcNow();
+        var keys = new[] { "!!!", "N1", "pre_N5", "skillLEVELname", "日本語 café!", new string('x', 45), "valid-key_2" };
+        for (var i = 0; i < keys.Length; i++)
+            t.Core.Learner.Profile.Evidence.Add(Record("old", keys[i], now.AddMinutes(-i)));
+        await t.Engine.RunTurnAsync("hello");
+        var line = chat.Requests[0].Options!.Instructions!.Split('\n').Single(x => x.StartsWith("- learner history:"));
+        Assert.EndsWith($"recently practiced: 日本語café, {new string('x', 40)}, valid-key_2)", line);
     }
 
     private static EvidenceRecord Record(string session, string key, DateTimeOffset at) => new()

@@ -72,7 +72,7 @@ internal sealed class ContextRenderer
             var earlier = profile.Evidence.Where(e => e.SessionId != _core.SessionId).OrderByDescending(e => e.At).ToList();
             learnerHistory = earlier.Count == 0
                 ? "new (no practice in earlier sessions)"
-                : $"returning ({earlier.Select(e => e.SessionId).Distinct().Count().ToString(CultureInfo.InvariantCulture)} earlier sessions with practice; last practice {System.Math.Max(0, (int)(_core.Clock.GetUtcNow() - earlier[0].At).TotalDays).ToString(CultureInfo.InvariantCulture)} days ago; recently practiced: {string.Join(", ", earlier.Select(e => e.Target.Key).Distinct().Take(5).Select(Safe))})";
+                : $"returning ({earlier.Select(e => e.SessionId).Distinct().Count().ToString(CultureInfo.InvariantCulture)} earlier sessions with practice; last practice {System.Math.Max(0, (int)(_core.Clock.GetUtcNow() - earlier[0].At).TotalDays).ToString(CultureInfo.InvariantCulture)} days ago; recently practiced: {string.Join(", ", earlier.Select(e => HistoryKey(e.Target.Key)).Where(k => k.Length > 0).Distinct().Take(5))})";
         }
 
         var round = scope.Rounds == 0 ? 1 : scope.Rounds;
@@ -181,6 +181,14 @@ internal sealed class ContextRenderer
     };
 
     private string Safe(string text) => Neutralize(_core.Secrets.Sanitize(text) ?? "");
+
+    private string HistoryKey(string text)
+    {
+        var key = Regex.Replace(_core.Secrets.Sanitize(text) ?? "", @"[^\p{L}\p{N}_-]", "");
+        if (key.IndexOf("level", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            Regex.IsMatch(key, @"^(?:pre_n5|n[1-5])$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) return "";
+        return key.Length > 40 ? key.Substring(0, 40) : key;
+    }
 
     private static string WrapBlock(IEnumerable<string> lines)
     {

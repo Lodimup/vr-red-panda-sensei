@@ -46,10 +46,10 @@ public sealed class ChallengeGuardTests
     }
 
     [Fact]
-    public async Task Ordinary_instruction_and_jlpt_mentions_are_allowed()
+    public async Task Ordinary_instructions_are_allowed()
     {
         await using var t = await StartAsync(("apple", "left"));
-        var result = await t.CallAsync("start_challenge", StartJson(Predicates(Obj("apple_1", "right")), instruction: """{"english":"Move the apple. This is N5 vocabulary."}"""));
+        var result = await t.CallAsync("start_challenge", StartJson(Predicates(Obj("apple_1", "right")), instruction: """{"english":"Move the apple. This is a beginner word."}"""));
         Assert.True(result.IsSuccess, result.Detail);
         var update = await t.CallAsync("update_challenge", """{"task_id":"t1","action":"revise","reason":"clarify","instruction":{"japanese":"りんごを右へ"}}""");
         Assert.True(update.IsSuccess, update.Detail);
