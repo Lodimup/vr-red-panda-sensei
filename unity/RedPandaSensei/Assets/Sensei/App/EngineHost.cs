@@ -23,6 +23,7 @@ namespace Sensei.App
     {
         private readonly MainThreadQueue queue = new MainThreadQueue(); private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         [SerializeField] private TMP_FontAsset? panelFont;
+        private int pauseEpoch; private Func<Func<Task<Sensei.Engine.Tools.ToolResult>>, Task<Sensei.Engine.Tools.ToolResult>> repeatScheduler = work => Task.Run(work);
         private int finishedTurns; private int hintShownAt = -1; private string? logKey;
         private StatusPanel statusPanel = null!; private TaskCard taskCard = null!; private HintCard hintCard = null!; private MenuPanel menu = null!;
         public string ModelStatus { get; private set; } = "no key"; public string VoiceStatus => speech != null ? "ready" : "not loaded"; public string RecognizerStatus => recognizer != null ? "ready" : "not loaded";
@@ -128,10 +129,12 @@ namespace Sensei.App
         public async Task<bool> Repeat()
         {
             var current = engine; if (!ready || current == null) return false;
+            var epoch = Volatile.Read(ref pauseEpoch);
             var token = ++turnToken; turnBusy = true; Interlocked.Increment(ref turnCount);
             try
             {
-                var result = await Task.Run(() => current.ReplayLastSpeechAsync(ct: lifetime.Token));
+                var result = await repeatScheduler(() => Volatile.Read(ref pauseEpoch) == epoch ? current.ReplayLastSpeechAsync(ct: lifetime.Token) : Task.FromResult<Sensei.Engine.Tools.ToolResult>(null!));
+                if (result == null) return false;
                 if (result.ErrorCode == "nothing_to_replay") { captions?.ShowRepeatEmpty(); Debug.Log("RPS_REPEAT nothing"); return true; }
                 if (result.IsSuccess) { Debug.Log("RPS_REPEAT ok"); return true; }
                 Debug.LogError("RPS_REPEAT failed " + result.ErrorCode); return false;
@@ -195,7 +198,7 @@ namespace Sensei.App
             finally { changingPace = false; }
         }
         private void Update() => queue.Drain();
-        private void OnApplicationPause(bool paused) { if (paused) { pushToTalk?.CancelCapture(); InterruptSpeech(); } }
+        private void OnApplicationPause(bool paused) { if (paused) { Interlocked.Increment(ref pauseEpoch); pushToTalk?.CancelCapture(); InterruptSpeech(); } }
         private void OnApplicationQuit() => Shutdown();
         private void OnDestroy() => Shutdown();
         private async void Shutdown()

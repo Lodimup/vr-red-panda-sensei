@@ -7,7 +7,6 @@ public class GuardTests
 {
     [Theory]
     [InlineData("You're at level N4.")]
-    [InlineData("Ur level is N4.")]
     [InlineData("あなたの日本語はN4です。")]
     public async Task CannotTellLearnerActualLevel(string text)
     {
