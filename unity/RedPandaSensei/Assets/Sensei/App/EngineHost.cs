@@ -23,7 +23,7 @@ namespace Sensei.App
     {
         private readonly MainThreadQueue queue = new MainThreadQueue(); private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         [SerializeField] private TMP_FontAsset? panelFont;
-        private int finishedTurns; private int hintShownAt = -1;
+        private int finishedTurns; private int hintShownAt = -1; private string? logKey;
         private StatusPanel statusPanel = null!; private TaskCard taskCard = null!; private HintCard hintCard = null!; private MenuPanel menu = null!;
         public string ModelStatus { get; private set; } = "no key"; public string VoiceStatus => speech != null ? "ready" : "not loaded"; public string RecognizerStatus => recognizer != null ? "ready" : "not loaded";
         private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private string? voiceFailure;
@@ -49,7 +49,7 @@ namespace Sensei.App
         }
         private void Report(string text)
         {
-            Debug.Log(text);
+            Debug.Log(LogRedactor.Redact(text, logKey));
             string display = text;
             if (text.StartsWith("RPS_BOOT step="))
             {
@@ -64,7 +64,7 @@ namespace Sensei.App
         {
             try
             {
-                var env = SenseiEnvFile.Load(Path.Combine(path, "sensei.env")); env.TryGetValue("SENSEI_LLM_API_KEY", out var key); env.TryGetValue("RPS_DEBUG_TEXT", out var debugText);
+                var env = SenseiEnvFile.Load(Path.Combine(path, "sensei.env")); env.TryGetValue("SENSEI_LLM_API_KEY", out var key); env.TryGetValue("RPS_DEBUG_TEXT", out var debugText); logKey = key;
                 Report("RPS_BOOT step=1 ok");
                 string? ttsDir = null, asrDir = null;
                 try { ttsDir = await VoiceModelInstaller.EnsureInstalledAsync("supertonic3", "2026-05-11", lifetime.Token); }
@@ -113,7 +113,7 @@ namespace Sensei.App
             try
             {
                 turnBusy = true; var watch = Stopwatch.StartNew(); var result = await Task.Run(() => engine.RunPlayerEventTurnAsync(kind, lifetime.Token));
-                FinishTurn(result.Status, result.ErrorCode); var tools = string.Join(",", result.ToolCalls.Select(t => t.Tool)); Debug.Log($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={tools}"); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message);
+                FinishTurn(result.Status, result.ErrorCode); var tools = string.Join(",", result.ToolCalls.Select(t => t.Tool)); Debug.Log(LogRedactor.Redact($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={tools}", logKey)); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message);
 
                 return result.Status == "completed";
             }
@@ -144,7 +144,7 @@ namespace Sensei.App
         {
             var current = engine; if (current == null || !hasKey) return;
             turnBusy = true;
-            try { var watch = Stopwatch.StartNew(); var result = await Task.Run(() => current.RunTurnAsync(transcript, lifetime.Token)); FinishTurn(result.Status, result.ErrorCode); Debug.Log($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={string.Join(",", result.ToolCalls.Select(t => t.Tool))}"); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message); }
+            try { var watch = Stopwatch.StartNew(); var result = await Task.Run(() => current.RunTurnAsync(transcript, lifetime.Token)); FinishTurn(result.Status, result.ErrorCode); Debug.Log(LogRedactor.Redact($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={string.Join(",", result.ToolCalls.Select(t => t.Tool))}", logKey)); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message); }
             catch (OperationCanceledException) { }
             catch (Exception e) { Debug.LogError("RPS_TURN failed type=" + e.GetType().Name); }
             finally { turnBusy = false; }
