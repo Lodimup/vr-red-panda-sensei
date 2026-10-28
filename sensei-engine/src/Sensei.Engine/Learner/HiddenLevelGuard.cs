@@ -12,7 +12,14 @@ public static class HiddenLevelGuard
     /// <summary>The detail of the <c>invalid_arguments</c> failure.</summary>
     public const string Detail = "hidden_level";
 
-    private static readonly Regex LevelTerms = new(@"\bjlpt\b|pre[_ -]?n[1-5]|\b[nｎ][1-5]\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    // Refuses text that tells the learner their own level; general talk about JLPT word levels stays allowed.
+    private static readonly Regex LevelTerms = new(
+        @"\byour\s+(?:jlpt|japanese)\s+level\b|\byour\s+level\s+is\b" +
+        @"|\byour\s+(?:jlpt\s+)?(?:pre[_ -]?)?[nｎＮ][1-5]\b" +
+        @"|\byou(?:'re|\s+are)\s+(?:at\s+|an?\s+)?(?:jlpt\s+)?(?:pre[_ -]?)?[nｎＮ][1-5]\b" +
+        @"|\bpre_n[1-5]\b" +
+        @"|あなたのレベル|(?:あなた|きみ|君)は\s*(?:jlpt\s*)?[nｎＮ][1-5]",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>True when presentation text contains a prohibited level reference.</summary>
     public static bool Check(string? text) =>

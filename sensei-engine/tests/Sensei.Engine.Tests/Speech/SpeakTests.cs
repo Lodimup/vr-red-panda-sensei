@@ -742,7 +742,6 @@ public sealed class SpeakTests
     [Theory]
     [InlineData("en", "text", "Your working level is high")]
     [InlineData("en", "text", "WORKING LEVEL")]
-    [InlineData("en", "text", "That word is N5.")]
     [InlineData("en", "text", "see working_level")]
     [InlineData("ja", "text", "あなたのworking levelはN3です")]
     [InlineData("ja", "translation", "your working level")]
@@ -761,10 +760,10 @@ public sealed class SpeakTests
     }
 
     [Theory]
-    [InlineData("This is a beginner word.")]
+    [InlineData("This is N5 vocabulary.")]
     [InlineData("Level up! Your level of focus is great.")]
     [InlineData("A working man works at a high level.")]
-    public async Task S80_ordinary_speech_stays_allowed(string text)
+    public async Task S80_talking_about_jlpt_levels_or_work_in_general_stays_allowed(string text)
     {
         await using var t = await NewAsync();
         Assert.Equal(ToolStatuses.Success, (await SpeakOne(t, "en", text)).Status);
