@@ -44,6 +44,12 @@ namespace Sensei.App
             if (!string.IsNullOrEmpty(testAudio)) return;
             try { mic.Begin(); } catch (Exception e) { Debug.LogError("RPS_MIC fail type=" + e.GetType().Name); held = false; sensei.SetTalkHeld(false); line.Set("Couldn't hear that"); }
         }
+        public void CancelCapture()
+        {
+            captureEpoch++;
+            bool wasHeld = held; held = false; micReady = false;
+            if (wasHeld) { mic?.Cancel(); sensei?.SetTalkHeld(false); line?.Set(""); }
+        }
         private async void Release()
         {
             if (!held) return;
@@ -64,6 +70,7 @@ namespace Sensei.App
                     var wave = WaveAudio.Decode(request.downloadHandler.data); samples = WaveAudio.Resample(wave.Samples, wave.SampleRate, 16000);
                 }
                 else samples = mic.End();
+                if (epoch != captureEpoch) return;
                 if (debug) { double energy = 0; foreach (var sample in samples) energy += sample * sample; Debug.Log($"RPS_MIC samples={samples.Length} rms={(samples.Length == 0 ? 0 : Math.Sqrt(energy / samples.Length)):F6}"); }
                 var watch = Stopwatch.StartNew(); var transcript = await recognizer!.TranscribeAsync(samples, CancellationToken.None);
                 if (epoch != captureEpoch) return;
