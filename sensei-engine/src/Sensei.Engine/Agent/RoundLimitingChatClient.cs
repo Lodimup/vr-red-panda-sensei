@@ -57,7 +57,9 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         _raiseState(scope, SenseiStates.Thinking);
 
         var (prepared, preparedOptions) = Prepare(messages, options, scope);
+        TraceRound(scope.Rounds, "request_sent", null);
         var response = await base.GetResponseAsync(prepared, preparedOptions, cancellationToken).ConfigureAwait(false);
+        TraceRound(scope.Rounds, "response_received", response.Usage?.OutputTokenCount);
 
         scope.InputTokens += response.Usage?.InputTokenCount ?? 0;
         scope.OutputTokens += response.Usage?.OutputTokenCount ?? 0;
@@ -70,6 +72,18 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         WireCallRecovery.Recover(response, _core.Pipeline.ReserveEngineCallId);
         RegisterUnknownTools(response);
         return response;
+    }
+
+    private void TraceRound(int round, string status, long? outputTokens)
+    {
+        if (_core.Options.Trace is not Sensei.Engine.Trace.IRoundTraceSink) return;
+        var turn = _core.CurrentTurn;
+        _core.WriteTrace(new Sensei.Engine.Trace.TraceEntry {
+            At = _core.Clock.GetUtcNow(), SessionId = _core.SessionId,
+            TurnId = turn?.TurnId ?? 0, GenerationId = turn?.GenerationId ?? 0,
+            Round = round, Tool = "engine:latency", Status = status,
+            Arguments = outputTokens?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? ""
+        });
     }
 
     public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,

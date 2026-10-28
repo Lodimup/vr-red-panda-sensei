@@ -53,7 +53,7 @@ namespace Sensei.App
         private async void Release()
         {
             if (!held) return;
-            held = false; Debug.Log("RPS_PTT end"); sensei.SetTalkHeld(false); int epoch = captureEpoch; float seconds = Time.realtimeSinceStartup - started;
+            var latency = new TurnLatency(); latency.Mark("release"); held = false; Debug.Log("RPS_PTT end"); sensei.SetTalkHeld(false); int epoch = captureEpoch; float seconds = Time.realtimeSinceStartup - started;
             if (seconds < TranscriptGate.MinHoldSeconds) { if (string.IsNullOrEmpty(testAudio)) try { mic.End(); } catch { } line.Set("Didn't catch that"); return; }
             line.Set("…");
             try
@@ -74,11 +74,12 @@ namespace Sensei.App
                 if (debug) { double energy = 0; foreach (var sample in samples) energy += sample * sample; Debug.Log($"RPS_MIC samples={samples.Length} rms={(samples.Length == 0 ? 0 : Math.Sqrt(energy / samples.Length)):F6}"); }
                 var watch = Stopwatch.StartNew(); var transcript = await recognizer!.TranscribeAsync(samples, CancellationToken.None);
                 if (epoch != captureEpoch) return;
+                latency.Mark("asr_done");
                 string log = $"RPS_ASR ms={watch.ElapsedMilliseconds} chars={transcript.Length}";
                 if (debug) log += " text=" + LogRedactor.Redact(transcript, secret).Replace('\n', ' ').Replace('\r', ' ');
                 Debug.Log(log);
                 if (!TranscriptGate.ShouldSend(seconds, transcript)) { line.Set("Didn't catch that"); return; }
-                line.Set("You: " + transcript); await host.RunTranscript(transcript);
+                line.Set("You: " + transcript); await host.RunTranscript(transcript, latency);
             }
             catch (Exception e) { Debug.LogError("RPS_ASR fail type=" + e.GetType().Name); if (epoch == captureEpoch) line.Set("Couldn't hear that"); }
         }
