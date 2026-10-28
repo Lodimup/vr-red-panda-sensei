@@ -26,9 +26,9 @@ the highest installed target API and `com.supercapybara.redpandasensei`.
 Output: `unity/RedPandaSensei/Build/RedPandaSensei.apk`.
 Override the editor executable with `UNITY_EDITOR` if needed.
 
-Keep the headset connected and authorize USB debugging. `push-env.sh` reads only
-`[openrouter_deepseek].api_key` from `$HOME/KEYS.toml` and creates a private temporary
-file, pushes it to the application's external files directory, then deletes it.
+Keep the headset connected and authorize USB debugging. `push-env.sh` uses
+`SENSEI_LLM_API_KEY` when set, or prompts for the key with hidden input in a terminal.
+It streams the key to the application's external files directory.
 Never commit `sensei.env`, include it in an APK, or print its contents.
 
 ```bash
