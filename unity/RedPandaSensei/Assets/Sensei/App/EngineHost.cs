@@ -24,7 +24,7 @@ namespace Sensei.App
         private int finishedTurns; private int hintShownAt = -1;
         private StatusPanel statusPanel = null!; private TaskCard taskCard = null!; private HintCard hintCard = null!; private MenuPanel menu = null!;
         public string ModelStatus { get; private set; } = "no key"; public string VoiceStatus => "not loaded"; public string RecognizerStatus => "not loaded";
-        private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey;
+        private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey; private bool destroyed;
         private void Start()
         {
             var rig = FindFirstObjectByType<OVRCameraRig>();
@@ -65,7 +65,8 @@ namespace Sensei.App
                     var client = string.IsNullOrWhiteSpace(key) ? null : ChatClientFactory.Create(LlmSettings.FromEnvironment(env));
                     return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = new LogSpeechOutput(debugText == "1", key), Events = events, ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
                 });
-                engine = created; hasKey = !string.IsNullOrWhiteSpace(key); ModelStatus = hasKey ? "ready" : "no key"; menu.RefreshStatus(); Report("RPS_BOOT step=5 ok"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; taskCard.SetSupport(snapshot.Support); taskCard.Show(snapshot.ActiveTask); Report("RPS_BOOT step=6 ok"); ready = true;
+                if (destroyed) { await created.DisposeAsync(); return; }
+                engine = created; hasKey = !string.IsNullOrWhiteSpace(key); ModelStatus = hasKey ? "ready" : "no key"; menu.RefreshStatus(); Report("RPS_BOOT step=5 ok"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); if (destroyed) return; area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; taskCard.SetSupport(snapshot.Support); taskCard.Show(snapshot.ActiveTask); Report("RPS_BOOT step=6 ok"); ready = true;
                 if (env.TryGetValue("RPS_TEST_MENU", out var testMenu) && testMenu == "1") menu.Toggle();
                 if (string.IsNullOrWhiteSpace(key)) { Report("No API key. Push sensei.env (see README)."); statusPanel.Complete(); return; }
                 if (await EventTurn("session_start")) { Report("RPS_BOOT step=7 ok"); statusPanel.Complete(); }
@@ -77,7 +78,7 @@ namespace Sensei.App
                     FinishTurn(testResult.Status, testResult.ErrorCode); Debug.Log($"RPS_TEST_TURN status={testResult.Status}");
                 }
             }
-            catch (Exception error) { Report($"RPS_BOOT fail type={error.GetType().Name}"); }
+            catch (Exception error) { if (!destroyed) Report($"RPS_BOOT fail type={error.GetType().Name}"); }
         }
         public async Task<bool> EventTurn(string kind)
         {
@@ -123,6 +124,15 @@ namespace Sensei.App
             finally { changingPace = false; }
         }
         private void Update() => queue.Drain();
-        private async void OnDestroy() { lifetime.Cancel(); if (engine != null) await engine.DisposeAsync(); lifetime.Dispose(); }
+        private void OnApplicationQuit() => Shutdown();
+        private void OnDestroy() => Shutdown();
+        private async void Shutdown()
+        {
+            if (destroyed) return;
+            destroyed = true; ready = false;
+            var current = engine; engine = null;
+            current?.CancelGeneration(); lifetime.Cancel();
+            if (current != null) await current.DisposeAsync();
+        }
     }
 }

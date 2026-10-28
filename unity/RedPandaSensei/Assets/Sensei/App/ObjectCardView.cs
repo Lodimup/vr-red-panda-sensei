@@ -9,7 +9,27 @@ namespace Sensei.App
         public string CatalogId { get; private set; } = "";
         private Transform head = null!; private Transform image = null!; private LineRenderer outline = null!; private HighlightView glow = null!;
         private Vector3 from; private Vector3 target; private float targetScale = 1; private float changedAt; private float bornAt; private float removeAt = -1;
-        public bool Dragging { get; set; }
+        private bool dragging, pending, pendingAccepted, pendingScene;
+        private float pendingAt;
+        private int moveVersion;
+        private string? expectedRegion, expectedContainer;
+        public bool Dragging
+        {
+            get => dragging;
+            set { dragging = value; if (value) { pending = false; moveVersion++; } else { pending = true; pendingAccepted = false; pendingScene = false; pendingAt = Time.time; moveVersion++; } }
+        }
+        public int PendingVersion => moveVersion;
+        public void ExpectDestination(string? region, string? container) { expectedRegion = region; expectedContainer = container; }
+        public bool CompleteMove(int version, bool ok)
+        {
+            if (!pending || version != moveVersion) return false;
+            if (!ok) { SnapBack(); return true; }
+            pendingAccepted = true;
+            if (pendingScene) ResumeTarget();
+            return true;
+        }
+        public void SnapBack() { pending = false; ResumeTarget(); }
+        private void ResumeTarget() { pending = false; from = transform.localPosition; changedAt = Time.time; }
         public void Initialize(string id, string catalog, Transform headTransform)
         {
             InstanceId = id; CatalogId = catalog; head = headTransform; bornAt = Time.time;
@@ -43,16 +63,18 @@ namespace Sensei.App
             }
             return line;
         }
-        public void SetTarget(Transform parent, Vector3 position, float scale, bool selected)
+        public void SetTarget(Transform parent, Vector3 position, float scale, bool selected, string region, string? container)
         {
             if (transform.parent != parent) transform.SetParent(parent, true);
             from = transform.localPosition; target = position; targetScale = scale; changedAt = Time.time; outline.gameObject.SetActive(selected);
+            if (pending && (expectedContainer != null ? container == expectedContainer : container == null && region == expectedRegion)) { pendingScene = true; if (pendingAccepted) ResumeTarget(); }
         }
         public void Highlight(int durationMs) => glow.Show(durationMs);
         public void Remove() { removeAt = Time.time; GetComponent<Collider>().enabled = false; }
         private void Update()
         {
-            if (!Dragging) transform.localPosition = Vector3.Lerp(from, target, Mathf.Clamp01((Time.time - changedAt) / 0.25f));
+            if (pending && Time.time - pendingAt >= 3f) SnapBack();
+            if (!Dragging && !pending) transform.localPosition = Vector3.Lerp(from, target, Mathf.Clamp01((Time.time - changedAt) / 0.25f));
             var direction = head.position - transform.position; direction.y = 0; if (direction.sqrMagnitude > 0.001f) transform.rotation = Quaternion.LookRotation(-direction);
             var size = Mathf.Clamp01((Time.time - bornAt) / 0.2f); if (removeAt >= 0) { size = 1 - Mathf.Clamp01((Time.time - removeAt) / 0.15f); if (size <= 0) Destroy(gameObject); }
             transform.localScale = Vector3.one * targetScale * size;
