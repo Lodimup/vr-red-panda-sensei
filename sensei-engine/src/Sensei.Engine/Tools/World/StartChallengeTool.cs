@@ -1,8 +1,10 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
+using Sensei.Engine.Learner;
 using Sensei.Engine.Tasks;
 
 namespace Sensei.Engine.Tools.World;
@@ -125,7 +127,12 @@ public sealed class StartChallengeTool : SenseiTool<StartChallengeArgs>
 
     protected override JsonTypeInfo<StartChallengeArgs> ArgsTypeInfo => SenseiJsonContext.Default.StartChallengeArgs;
 
-    public override string? ValidateArguments(StartChallengeArgs args) => TaskValidator.ValidateShape(args.Instruction, args.Predicates);
+    public override string? ValidateArguments(StartChallengeArgs args) =>
+        HiddenLevelGuard.Check(args.Instruction?.Japanese) || HiddenLevelGuard.Check(args.Instruction?.English) ||
+        HiddenLevelGuard.Check(args.Role) || args.ScenarioProperties.Any(p => HiddenLevelGuard.Check(p.Value)) ||
+        args.SkillTargets.Any(t => HiddenLevelGuard.Check(t.Japanese))
+            ? HiddenLevelGuard.Detail
+            : TaskValidator.ValidateShape(args.Instruction, args.Predicates);
 
     public override IEnumerable<string> ReferencedInstanceIds(StartChallengeArgs args) => TaskValidator.ReferencedIds(args.Predicates, args.ScenarioProperties);
 
