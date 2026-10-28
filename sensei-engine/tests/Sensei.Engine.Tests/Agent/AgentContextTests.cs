@@ -136,6 +136,23 @@ public sealed class AgentContextTests
     }
 
     [Fact]
+    public async Task Beginners_get_a_small_first_request_task()
+    {
+        var chat = new ScriptedChatClient().EnqueueText("ok");
+        await using var t = await EngineAsync(chat);
+        await t.Engine.RunTurnAsync("hi");
+        var text = Instructions(chat);
+
+        Assert.Contains("starting band is `zero` or `early_beginner`", text);
+        Assert.Contains("no band has been chosen and they say they know little or no Japanese", text);
+        Assert.Contains("no task is active", text);
+        Assert.Contains("one small `discover_request` task within your first two responses after they say so", text);
+        Assert.Contains("object in the scene (spawn one first if none)", text);
+        Assert.Contains("English instruction and the Japanese phrase as the target", text);
+        Assert.Contains("Keep only one task active at a time", text);
+    }
+
+    [Fact]
     public async Task S88_the_system_prompt_tells_sensei_to_speak_any_recap_before_end_activity()
     {
         var chat = new ScriptedChatClient().EnqueueText("ok");
