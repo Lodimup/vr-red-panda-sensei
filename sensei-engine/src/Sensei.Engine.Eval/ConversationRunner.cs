@@ -89,7 +89,7 @@ internal static class ConversationRunner
         var log = new ConversationLog(live);
         var record = new ConversationRecord { Id = conversation.Id, Description = conversation.Description, Band = conversation.Band };
 
-        var provider = new TimingChatClient(ChatClientFactory.Create(settings));
+        var provider = new TimingChatClient(ChatClientFactory.Create(settings), log);
         var speech = new EvalSpeech(log);
         var trace = new EvalTrace(Path.Combine(outDir, "traces", conversation.Id + ".jsonl"), log);
         var store = new FileProfileStore(Path.Combine(outDir, "profiles", conversation.Id));

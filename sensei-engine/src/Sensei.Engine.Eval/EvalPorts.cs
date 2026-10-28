@@ -151,9 +151,11 @@ internal sealed class TimingChatClient : DelegatingChatClient
 {
     private readonly object _gate = new();
     private readonly List<ModelRequest> _requests = new();
+    private readonly ConversationLog? _log;
 
-    public TimingChatClient(IChatClient inner) : base(inner)
+    public TimingChatClient(IChatClient inner, ConversationLog? log = null) : base(inner)
     {
+        _log = log;
     }
 
     /// <summary>The requests since the last call.</summary>
@@ -170,12 +172,30 @@ internal sealed class TimingChatClient : DelegatingChatClient
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
         var clock = Stopwatch.StartNew();
-        var response = await base.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
+        ChatResponse response;
+        try
+        {
+            response = await base.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (System.ClientModel.ClientResultException ex)
+        {
+            // The provider's own words about a rejected request (never the request, which carries the key's owner's text only).
+            var body = ex.GetRawResponse()?.Content?.ToString() ?? "";
+            _log?.Line($"[model-error] HTTP {ex.Status} after {clock.ElapsedMilliseconds} ms: {(body.Length > 700 ? body[..700] : body)}");
+            throw;
+        }
         clock.Stop();
+        if (_log is not null)
+            foreach (var call in response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>())
+                _log.Line($"[model-call-id] {call.Name} id shape {Shape(call.CallId)}");
         var (reasoning, cost) = ReadUsage(response);
         lock (_gate) _requests.Add(new ModelRequest(clock.ElapsedMilliseconds, response.Usage?.InputTokenCount, response.Usage?.OutputTokenCount, reasoning, cost));
         return response;
     }
+
+    /// <summary>The length and character classes of an id (letters a, digits 9, others kept): enough to see which redaction rule it meets.</summary>
+    private static string Shape(string? id) =>
+        id is null ? "null" : id.Length + ":" + new string(id.Select(c => char.IsLetter(c) ? 'a' : char.IsDigit(c) ? '9' : c).ToArray());
 
 #pragma warning disable SCME0001 // JsonPatch: the provider's usage.cost is not a field of the OpenAI SDK's usage type.
     /// <summary>Reasoning tokens and the provider-reported cost (USD) of one response, when it carries them.</summary>
