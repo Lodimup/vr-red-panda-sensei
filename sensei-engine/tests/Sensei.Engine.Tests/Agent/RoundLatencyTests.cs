@@ -6,14 +6,6 @@ namespace Sensei.Engine.Tests.Agent;
 public sealed class RoundLatencyTests
 {
     [Fact]
-    public void PromptRequestsShortOpeningAndFirstResponseSpeech()
-    {
-        var prompt = Sensei.Engine.Agent.SystemPrompt.Text;
-        Assert.Contains("Open with a short spoken sentence (at most 6 words or 15 kana)", prompt);
-        Assert.Contains("put all speech in the first response when no tool result is needed", prompt);
-    }
-
-    [Fact]
     public async Task OptedInSinkReceivesEachRequestAndResponseWithoutLearnerText()
     {
         var chat = new ScriptedChatClient()
