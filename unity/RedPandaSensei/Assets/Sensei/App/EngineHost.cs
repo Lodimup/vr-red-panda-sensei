@@ -26,7 +26,7 @@ namespace Sensei.App
         private int finishedTurns; private int hintShownAt = -1; private string? logKey;
         private StatusPanel statusPanel = null!; private TaskCard taskCard = null!; private HintCard hintCard = null!; private MenuPanel menu = null!;
         public string ModelStatus { get; private set; } = "no key"; public string VoiceStatus => speech != null ? "ready" : "not loaded"; public string RecognizerStatus => recognizer != null ? "ready" : "not loaded";
-        private UnityEngineEvents? engineEvents; private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private int turnCount; public int TestTranscriptStarts { get; private set; } private string engineState = "idle"; private string? voiceFailure;
+        private UnityEngineEvents? engineEvents; private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private long turnToken; private int turnCount; public int TestTranscriptStarts { get; private set; } private string engineState = "idle"; private string? voiceFailure;
 
         private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey; private bool destroyed;
         private void Start()
@@ -117,16 +117,17 @@ namespace Sensei.App
         {
             if (!ready || engine == null) return false;
             if (!hasKey) { Report("No API key. Push sensei.env (see README)."); return false; }
+            var token = ++turnToken; turnBusy = true;
             try
             {
-                turnBusy = true; Interlocked.Increment(ref turnCount); var watch = Stopwatch.StartNew(); var result = await Task.Run(() => engine.RunPlayerEventTurnAsync(kind, lifetime.Token));
+                Interlocked.Increment(ref turnCount); var watch = Stopwatch.StartNew(); var result = await Task.Run(() => engine.RunPlayerEventTurnAsync(kind, lifetime.Token));
                 FinishTurn(result.Status, result.ErrorCode); var tools = string.Join(",", result.ToolCalls.Select(t => t.Tool)); Debug.Log(LogRedactor.Redact($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={tools}", logKey)); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message);
 
                 return result.Status == "completed";
             }
             catch (OperationCanceledException) { return false; }
             catch (Exception error) { Debug.LogError("RPS_TURN failed type=" + error.GetType().Name); return false; }
-            finally { turnBusy = false; Interlocked.Decrement(ref turnCount); }
+            finally { if (token == turnToken) turnBusy = false; Interlocked.Decrement(ref turnCount); }
         }
         private void FinishTurn(string status, string? code)
         {
@@ -153,11 +154,11 @@ namespace Sensei.App
         public async Task RunTranscript(string transcript)
         {
             var current = engine; if (current == null || !hasKey) return;
-            turnBusy = true; Interlocked.Increment(ref turnCount); TestTranscriptStarts++;
+            var token = ++turnToken; turnBusy = true; Interlocked.Increment(ref turnCount); TestTranscriptStarts++;
             try { var watch = Stopwatch.StartNew(); var result = await Task.Run(() => current.RunTurnAsync(transcript, lifetime.Token)); FinishTurn(result.Status, result.ErrorCode); Debug.Log(LogRedactor.Redact($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={string.Join(",", result.ToolCalls.Select(t => t.Tool))}", logKey)); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message); }
             catch (OperationCanceledException) { }
             catch (Exception e) { Debug.LogError("RPS_TURN failed type=" + e.GetType().Name); }
-            finally { turnBusy = false; Interlocked.Decrement(ref turnCount); }
+            finally { if (token == turnToken) turnBusy = false; Interlocked.Decrement(ref turnCount); }
         }
         private sealed class UnavailableSpeechOutput : ISpeechOutput { public Task<SpeechOutcome> SpeakAsync(SpeechRequest request, CancellationToken ct) => Task.FromResult(new SpeechOutcome(SpeechStatuses.Failed, "voice unavailable", 0)); }
 
@@ -183,6 +184,7 @@ namespace Sensei.App
             finally { changingPace = false; }
         }
         private void Update() => queue.Drain();
+        private void OnApplicationPause(bool paused) { if (paused) InterruptSpeech(); }
         private void OnApplicationQuit() => Shutdown();
         private void OnDestroy() => Shutdown();
         private async void Shutdown()
