@@ -21,8 +21,9 @@ namespace Sensei.App
         private readonly PracticeAreaView area;
         private readonly SenseiView sensei;
         private readonly Action<string> paceChanged;
+        private readonly Action<string> stateChanged;
+        public UnityEngineEvents(MainThreadQueue queue, PracticeAreaView area, SenseiView sensei, Action<string> paceChanged, Action<string>? stateChanged = null) { this.queue = queue; this.area = area; this.sensei = sensei; this.paceChanged = paceChanged; this.stateChanged = stateChanged ?? (_ => { }); }
         public Action<Sensei.Engine.Events.HintCard>? Hint; public Action<TaskView>? Task; public Action<SupportSettings>? Support;
-        public UnityEngineEvents(MainThreadQueue queue, PracticeAreaView area, SenseiView sensei, Action<string> paceChanged) { this.queue = queue; this.area = area; this.sensei = sensei; this.paceChanged = paceChanged; }
         public void OnSceneChanged(SceneEvent e, SceneSnapshot scene) => queue.Post(() => { Debug.Log($"RPS_EVENT OnSceneChanged kind={e.Kind} revision={scene.Revision}"); area.Render(scene); });
         public void OnHighlight(IReadOnlyList<string> ids, int durationMs) { var copy = ids.ToArray(); queue.Post(() => area.Highlight(copy, durationMs)); }
         public void OnAnimate(string animation, string? targetId) => queue.Post(() => sensei.Animate(animation, targetId));
@@ -32,6 +33,6 @@ namespace Sensei.App
         public void OnTaskChanged(TaskView task) { lock (panelLock) { pendingTask = task?.Clone(); if (taskQueued) return; taskQueued = true; queue.Post(FlushTask); } }
         private void FlushTask() { TaskView? value; int epoch; lock (panelLock) { value = pendingTask; pendingTask = null; taskQueued = false; epoch = panelEpoch; } lock (panelLock) { if (epoch == panelEpoch && value != null) Task?.Invoke(value); } }
         public void OnSummary(SessionSummary summary) { }
-        public void OnSenseiState(string state) => queue.Post(() => sensei.SetState(state));
+        public void OnSenseiState(string state) => queue.Post(() => { sensei.SetState(state); stateChanged(state); });
     }
 }

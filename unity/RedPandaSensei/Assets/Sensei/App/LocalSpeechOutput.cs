@@ -16,13 +16,14 @@ namespace Sensei.App
         private readonly LocalTts tts;
         private readonly SpeechPlayer player;
         private readonly MainThreadQueue queue;
+        private readonly bool debugText; private readonly string? secret;
         private readonly object gate = new object();
         private readonly SpeechCache<TtsAudio> cache = new SpeechCache<TtsAudio>(64);
         private long generation = -1;
         public event Action<SpeechSegment>? SegmentStarted;
         public SpeechCaptions CurrentCaptions { get; private set; } = SpeechCaptions.All;
         public event Action? UtteranceEnded;
-        public LocalSpeechOutput(LocalTts tts, SpeechPlayer player, MainThreadQueue queue) { this.tts = tts; this.player = player; this.queue = queue; }
+        public LocalSpeechOutput(LocalTts tts, SpeechPlayer player, MainThreadQueue queue, bool debugText = false, string? secret = null) { this.tts = tts; this.player = player; this.queue = queue; this.debugText = debugText; this.secret = secret; }
         public void Interrupt()
         {
             lock (gate) { generation++; player.StopAll(generation); }
@@ -41,6 +42,7 @@ namespace Sensei.App
         public async Task<SpeechOutcome> SpeakAsync(SpeechRequest request, CancellationToken ct)
         {
             int presented = 0; bool stopped = false; var id = request.GenerationId;
+            if (debugText) Debug.Log($"RPS_SPEAK_GROUP generation={id} langs=" + string.Join(",", System.Linq.Enumerable.Select(request.Segments, segment => segment.Lang)));
             lock (gate)
             {
                 if (ct.IsCancellationRequested || id < generation) return new SpeechOutcome(SpeechStatuses.Cancelled, null, 0);
@@ -51,7 +53,7 @@ namespace Sensei.App
             {
                 presented = await SpeechPipeline.PlayAsync(request.Segments,
                     segment => Synthesize(segment, speed, ct),
-                    async (segment, audio) => { var outcome = await player.PlayAsync(audio, id, ct, () => queue.Post(() => { if (Current(id, ct)) { CurrentCaptions = request.EffectiveCaptions; SegmentStarted?.Invoke(segment); } })); if (outcome != PlayOutcome.Completed) stopped = true; return outcome; },
+                    async (segment, audio) => { var outcome = await player.PlayAsync(audio, id, ct, () => queue.Post(() => { if (Current(id, ct)) { if (debugText) Debug.Log($"RPS_SPEAK generation={id} lang={segment.Lang} text=" + LogRedactor.Redact(segment.Text, secret).Replace('\n', ' ').Replace('\r', ' ')); CurrentCaptions = request.EffectiveCaptions; SegmentStarted?.Invoke(segment); } })); if (outcome != PlayOutcome.Completed) stopped = true; return outcome; },
                     () => Current(id, ct), ct, count => presented = count);
                 if (stopped || !Current(id, ct) || presented != request.Segments.Count) return new SpeechOutcome(SpeechStatuses.Cancelled, null, presented);
                 return new SpeechOutcome(SpeechStatuses.Completed, null, presented);

@@ -1,0 +1,4 @@
+wait_idle
+event help_repeat
+interrupt_after_ms 1500 interrupt
+wait_idle

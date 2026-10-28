@@ -1,0 +1,2 @@
+wait_idle
+log returning_greeting_complete
