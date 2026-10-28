@@ -18,7 +18,8 @@ namespace Sensei.App.Core
         public static string FormatSummary(SessionSummary summary)
         {
             var lines = summary.Practiced.Select(p => $"{p.Label}: {p.Independent} independent, {p.Supported} supported").ToArray();
-            return lines.Length == 0 ? "Nothing practiced yet." : string.Join("\n", lines);
+            var practiced = lines.Length == 0 ? "Nothing practiced yet." : string.Join("\n", lines);
+            return string.IsNullOrWhiteSpace(summary.NextSuggestion) ? practiced : practiced + "\nNext: " + summary.NextSuggestion;
         }
     }
 }
