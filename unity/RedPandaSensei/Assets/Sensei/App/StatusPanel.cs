@@ -12,7 +12,7 @@ namespace Sensei.App
         {
             transform.SetParent(head, false); transform.localPosition = new Vector3(0, .15f, 1.3f);
             background = PanelText.Surface(transform, "Status background", Vector3.zero, new Vector3(.8f, .35f, .01f)).GetComponent<Renderer>();
-            text = PanelText.Create(transform, "Status", new Vector3(0, 0, -.01f), new Vector2(.75f, .32f), 2.2f, font);
+            text = PanelText.Create(transform, "Status", new Vector3(0, 0, -.01f), new Vector2(.75f, .32f), 0.24f, font);
         }
         public void Add(string line, bool isError = false) { lines.Add(line); text.text = string.Join("\n", lines); error |= isError; if (isError) { text.alpha = 1; var color = background.material.color; color.a = 1; background.material.color = color; } gameObject.SetActive(true); }
         public void Complete() { completedAt = Time.time; }
