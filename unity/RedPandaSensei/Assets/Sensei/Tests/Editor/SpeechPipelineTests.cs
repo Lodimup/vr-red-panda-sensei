@@ -9,21 +9,42 @@ public class SpeechPipelineTests
     [Test]
     public async Task SynthesisOfNextStartsDuringPlaybackAndSegmentsStayOrdered()
     {
-        var trace = new List<string>(); var first = new TaskCompletionSource<bool>();
+        var trace = new List<string>(); var first = new TaskCompletionSource<PlayOutcome>();
         var run = SpeechPipeline.PlayAsync(new[] { "one", "two" }, s => { trace.Add("synth " + s); return Task.FromResult(s); },
-            (s, audio) => { trace.Add("play " + s); return s == "one" ? first.Task : Task.FromResult(true); }, () => true, CancellationToken.None);
+            (s, audio) => { trace.Add("play " + s); return s == "one" ? first.Task : Task.FromResult(PlayOutcome.Completed); }, () => true, CancellationToken.None);
         CollectionAssert.AreEqual(new[] { "synth one", "play one", "synth two" }, trace);
-        first.SetResult(true); Assert.AreEqual(2, await run);
+        first.SetResult(PlayOutcome.Completed); Assert.AreEqual(2, await run);
         CollectionAssert.AreEqual(new[] { "synth one", "play one", "synth two", "play two" }, trace);
     }
     [Test]
     public async Task StaleGenerationNeverPlaysTheNextSynthesizedSegment()
     {
-        bool current = true; var first = new TaskCompletionSource<bool>(); var played = new List<string>();
+        bool current = true; var first = new TaskCompletionSource<PlayOutcome>(); var played = new List<string>();
         var run = SpeechPipeline.PlayAsync(new[] { "one", "two" }, s => Task.FromResult(s),
             (s, audio) => { played.Add(s); return first.Task; }, () => current, CancellationToken.None);
-        current = false; first.SetResult(true); Assert.AreEqual(0, await run); CollectionAssert.AreEqual(new[] { "one" }, played);
+        current = false; first.SetResult(PlayOutcome.Completed); Assert.AreEqual(1, await run); CollectionAssert.AreEqual(new[] { "one" }, played);
     }
+    [TestCase(PlayOutcome.StoppedAfterStart, 1)]
+    [TestCase(PlayOutcome.NotStarted, 0)]
+    public async Task InterruptedPlaybackCountsOnlyStartedSegments(PlayOutcome outcome, int expected)
+    {
+        int reported = -1;
+        var result = await SpeechPipeline.PlayAsync(new[] { "one", "two" }, s => Task.FromResult(s),
+            (s, audio) => Task.FromResult(outcome), () => true, CancellationToken.None, n => reported = n);
+        Assert.AreEqual(expected, result);
+        Assert.AreEqual(expected == 0 ? -1 : expected, reported);
+    }
+    [TestCase("API_KEY=secret1234")]
+    [TestCase("SK-abcdefghijklmnop")]
+    [TestCase("abcdefghijklmnopqrstuvwxyz0123456789")]
+    public void CredentialPatternsAreRedacted(string input) => Assert.AreEqual("[redacted]", LogRedactor.Redact(input, null));
+    [TestCase("password")]
+    [TestCase("API key")]
+    [TestCase("antidisestablishmentarianism")]
+    [TestCase("今日はpasswordという単語を練習したい")]
+    public void OrdinaryWordsSurviveRedaction(string input) => Assert.AreEqual(input, LogRedactor.Redact(input, null));
+    [Test]
+    public void ConfiguredKeyIsRedacted() => Assert.AreEqual("value [redacted]", LogRedactor.Redact("value exact-key", "exact-key"));
     [Test]
     public void CacheKeysIncludeTextLanguageAndSpeedAndEvictsLeastRecentlyUsed()
     {
