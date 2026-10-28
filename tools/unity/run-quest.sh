@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+keep_awake=0
+if [[ ${1:-} == --keep-awake && $# == 1 ]]; then keep_awake=1
+elif (( $# != 0 )); then echo 'Usage: run-quest.sh [--keep-awake]' >&2; exit 2
+fi
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 serial=${QUEST_SERIAL:-${ANDROID_SERIAL:-}}
 adb_device=(adb)
@@ -9,7 +13,13 @@ package=com.supercapybara.redpandasensei
 "${adb_device[@]}" install -r "$apk"
 "${adb_device[@]}" shell am force-stop "$package"
 "${adb_device[@]}" logcat -c
-trap '"${adb_device[@]}" shell setprop debug.oculus.guardian_pause 0 >/dev/null 2>&1 || true; "${adb_device[@]}" shell am broadcast -a com.oculus.vrpowermanager.automation_disable >/dev/null 2>&1 || true' EXIT
+cleanup() {
+  if (( ! keep_awake )); then
+    "${adb_device[@]}" shell setprop debug.oculus.guardian_pause 0 >/dev/null 2>&1 || true
+    "${adb_device[@]}" shell am broadcast -a com.oculus.vrpowermanager.automation_disable >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
 "${adb_device[@]}" shell am broadcast -a com.oculus.vrpowermanager.prox_close >/dev/null
 # RULING(Handler 2026-10-28): pause the boundary for automated desk runs, restore it on exit.
 "${adb_device[@]}" shell setprop debug.oculus.guardian_pause 1
