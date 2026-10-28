@@ -51,14 +51,15 @@ launch_status=$?
 set -e
 pid=$("${adb_device[@]}" shell pidof "$package" | tr -d '\r' | awk '{print $1}')
 if [[ -z $pid ]]; then echo 'STUCK: app PID not found' >&2; kill "$recorder" 2>/dev/null || true; exit 1; fi
-# Read buffered process-bound logs until the driver finishes or the recording ends.
-"${adb_device[@]}" logcat --pid="$pid" -s Unity -v threadtime >"$out/logcat.txt" & logger=$!
-for ((i=0; i<600; i++)); do
-  if rg -q 'RPS_E2E done (pass|fail)' "$out/logcat.txt"; then break; fi
+# Read the process-bound ring buffer repeatedly: an ADB reconnect can close a stream.
+for ((i=0; i<300; i++)); do
+  if timeout 10 "${adb_device[@]}" logcat -d --pid="$pid" -s Unity -v threadtime >"$out/logcat.next" 2>"$out/logcat-error.txt"; then
+    mv "$out/logcat.next" "$out/logcat.txt"
+    if rg -q 'RPS_E2E done (pass|fail)' "$out/logcat.txt"; then break; fi
+  fi
   if ! kill -0 "$recorder" 2>/dev/null; then break; fi
-  sleep 1
+  sleep 2
 done
-kill "$logger" 2>/dev/null || true; wait "$logger" 2>/dev/null || true
 kill -TERM "$recorder" 2>/dev/null || true
 if ! wait "$recorder"; then echo "STUCK: frame capture failed: $(cat "$out/record.log")" >&2; exit 1; fi
 recorder=
