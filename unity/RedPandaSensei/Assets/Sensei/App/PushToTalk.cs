@@ -35,6 +35,8 @@ namespace Sensei.App
         {
             if (held && !micReady && string.IsNullOrEmpty(testAudio) && mic.IsRecording) { micReady = true; Debug.Log("RPS_MIC ready"); }
         }
+        public void TestPress(string name) { testAudio = "e2e/" + name + ".wav"; Press(); }
+        public void TestRelease() => Release();
         private void Press()
         {
             if (held || !host.CanTalk || recognizer == null) return;
@@ -54,7 +56,8 @@ namespace Sensei.App
                 if (!string.IsNullOrEmpty(testAudio))
                 {
                     string filename = testAudio; testAudio = null;
-                    if (Path.GetFileName(filename) != filename) throw new IOException("Invalid test audio name");
+                    if (filename.StartsWith("e2e/", StringComparison.Ordinal)) { var name = filename.Substring(4); if (Path.GetFileName(name) != name || name.Contains("\\")) throw new IOException("Invalid test audio name"); }
+                    else if (Path.GetFileName(filename) != filename) throw new IOException("Invalid test audio name");
                     using var request = UnityWebRequest.Get(Application.streamingAssetsPath + "/" + filename);
                     var operation = request.SendWebRequest(); while (!operation.isDone) await Task.Yield();
                     if (request.result != UnityWebRequest.Result.Success) throw new IOException("Cannot read test audio");
