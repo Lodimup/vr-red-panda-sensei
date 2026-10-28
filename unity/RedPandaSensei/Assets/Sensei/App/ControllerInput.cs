@@ -22,7 +22,7 @@ namespace Sensei.App
             repeat.performed += context => { _ = host.EventTurn("help_repeat"); };
             hint.performed += context => { _ = host.EventTurn("help_hint"); };
             replace.performed += _ => { yDown = Time.time; replaced = false; };
-            replace.canceled += _ => { if (yDown >= 0 && !replaced) host.ToggleMenu(); yDown = -1; };
+            replace.canceled += _ => { if (yDown >= 0 && !replaced) { if (Time.time - yDown >= 1) host.ReplaceArea(); else host.ToggleMenu(); } yDown = -1; };
             pace.performed += _ => host.TogglePace();
             foreach (var a in new[] { trigger, grip, repeat, hint, replace, pace }) a.Enable();
         }
