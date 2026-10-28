@@ -191,9 +191,20 @@ public sealed class SenseiEngine : IAsyncDisposable
         {
             if (ct.IsCancellationRequested) return new ToolResult { Status = ToolStatuses.Cancelled, ErrorCode = ToolErrorCodes.Cancelled };
             using var scope = _core.OpenNotificationScope();
-            long ticket;
-            lock (_turnGate) ticket = ++_turnTicket;
-            await CancelRunningTurnAsync().ConfigureAwait(false);
+            long ticket, generation;
+            Task? running;
+            lock (_turnGate)
+            {
+                ticket = ++_turnTicket;
+                running = _runningTurn;
+                // Account for this replay's own cancellation, but no later generation change.
+                generation = _core.CurrentGeneration + (running is null ? 0 : 1);
+            }
+            if (running is not null)
+            {
+                _core.CancelGeneration();
+                await running.ConfigureAwait(false);
+            }
             try { await _lifecycle.WaitAsync(ct).ConfigureAwait(false); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new ToolResult { Status = ToolStatuses.Cancelled, ErrorCode = ToolErrorCodes.Cancelled }; }
             var settled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -207,9 +218,12 @@ public sealed class SenseiEngine : IAsyncDisposable
             {
                 lock (_core.Sync)
                 {
+                    if (_core.CurrentGeneration != generation) return new ToolResult { Status = ToolStatuses.Cancelled, ErrorCode = ToolErrorCodes.Cancelled };
                     if (_core.SpeechHistory.Latest is null) return new ToolResult { Status = ToolStatuses.Failure, ErrorCode = ToolErrorCodes.NothingToReplay, Detail = "nothing has been said yet", Tool = "replay_speech", Revision = _core.World.Revision };
                 }
-                _core.BeginTurnCore("(player repeat)", synthetic: true); started = true;
+                if (_core.BeginTurnCoreIfCurrent("(player repeat)", synthetic: true, correctedFrom: null, generation) is null)
+                    return new ToolResult { Status = ToolStatuses.Cancelled, ErrorCode = ToolErrorCodes.Cancelled };
+                started = true;
                 bool superseded;
                 lock (_turnGate) superseded = ticket != _turnTicket;
                 if (superseded) _core.CancelGeneration();
