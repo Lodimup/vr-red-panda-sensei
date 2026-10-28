@@ -180,7 +180,7 @@ namespace Sensei.App
             finally { changingPace = false; }
         }
         private void Update() => queue.Drain();
-        private void OnApplicationPause(bool paused) { if (paused) InterruptSpeech(); }
+        private void OnApplicationPause(bool paused) { if (paused) { pushToTalk?.CancelCapture(); InterruptSpeech(); } }
         private void OnApplicationQuit() => Shutdown();
         private void OnDestroy() => Shutdown();
         private async void Shutdown()

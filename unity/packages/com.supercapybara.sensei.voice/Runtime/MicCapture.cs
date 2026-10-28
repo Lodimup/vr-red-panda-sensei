@@ -60,7 +60,7 @@ namespace Sensei.Voice
             return WaveAudio.Resample(mono, rate, 16000);
         }
 
-        private void OnDisable()
+        public void Cancel()
         {
             permissionPending = false; ++permissionRequest;
             if (clip == null) return;
@@ -68,5 +68,7 @@ namespace Sensei.Voice
             Destroy(clip);
             clip = null;
         }
+
+        private void OnDisable() => Cancel();
     }
 }
