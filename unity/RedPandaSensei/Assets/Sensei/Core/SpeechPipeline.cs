@@ -25,10 +25,12 @@ namespace Sensei.App.Core
             if (items.Count > capacity) { var last = order.Last!; items.Remove(last.Value.key); order.RemoveLast(); }
         }
     }
+    public enum PlayOutcome { Completed, StoppedAfterStart, NotStarted }
+
     public static class SpeechPipeline
     {
-        // A zero-based result is the number of segments that completed playback.
-        public static async Task<int> PlayAsync<TSegment, TAudio>(IReadOnlyList<TSegment> segments, Func<TSegment, Task<TAudio>> synthesize, Func<TSegment, TAudio, Task<bool>> play, Func<bool> current, CancellationToken token, Action<int>? onPlayed = null)
+        // Count segments once playback has started, including interrupted playback.
+        public static async Task<int> PlayAsync<TSegment, TAudio>(IReadOnlyList<TSegment> segments, Func<TSegment, Task<TAudio>> synthesize, Func<TSegment, TAudio, Task<PlayOutcome>> play, Func<bool> current, CancellationToken token, Action<int>? onPlayed = null)
         {
             if (segments.Count == 0) return 0;
             var next = synthesize(segments[0]); int played = 0;
@@ -37,8 +39,9 @@ namespace Sensei.App.Core
                 var audio = await next; token.ThrowIfCancellationRequested(); if (!current()) return played;
                 var playback = play(segments[i], audio);
                 if (i + 1 < segments.Count) next = synthesize(segments[i + 1]);
-                if (!await playback || !current()) return played;
-                played++; onPlayed?.Invoke(played);
+                var outcome = await playback;
+                if (outcome != PlayOutcome.NotStarted) { played++; onPlayed?.Invoke(played); }
+                if (outcome != PlayOutcome.Completed || !current()) return played;
             }
             return played;
         }

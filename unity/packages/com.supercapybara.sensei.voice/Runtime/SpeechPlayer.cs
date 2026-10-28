@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using Sensei.App.Core;
 
 namespace Sensei.Voice
 {
@@ -14,7 +15,9 @@ namespace Sensei.Voice
             internal TtsAudio Audio;
             internal long Generation;
             internal CancellationToken Token;
-            internal readonly TaskCompletionSource<bool> Result = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            internal bool Started;
+            internal Action OnStarted;
+            internal readonly TaskCompletionSource<PlayOutcome> Result = new TaskCompletionSource<PlayOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
         private readonly ConcurrentQueue<Playback> pending = new ConcurrentQueue<Playback>();
         private readonly object admission = new object();
@@ -36,15 +39,15 @@ namespace Sensei.Voice
             source.spatialBlend = 0;
         }
 
-        public Task<bool> PlayAsync(TtsAudio audio, long generation, CancellationToken ct)
+        public Task<PlayOutcome> PlayAsync(TtsAudio audio, long generation, CancellationToken ct, Action onStarted)
         {
             lock (admission)
             {
                 if (ct.IsCancellationRequested || generation != Interlocked.Read(ref this.generation) || closed != 0)
-                    return Task.FromResult(false);
+                    return Task.FromResult(PlayOutcome.NotStarted);
                 if (audio.Samples == null || audio.Samples.Length == 0 || audio.SampleRate <= 0)
                     throw new ArgumentException("Empty or invalid audio", nameof(audio));
-                var item = new Playback { Audio = audio, Generation = generation, Token = ct };
+                var item = new Playback { Audio = audio, Generation = generation, Token = ct, OnStarted = onStarted };
                 pending.Enqueue(item);
                 return item.Result.Task;
             }
@@ -78,13 +81,14 @@ namespace Sensei.Voice
                 lock (admission)
                 {
                     if (item.Token.IsCancellationRequested || item.Generation != Interlocked.Read(ref generation))
-                    { item.Result.TrySetResult(false); continue; }
+                    { item.Result.TrySetResult(PlayOutcome.NotStarted); continue; }
                     Finish(false);
                     active = item;
                     clip = AudioClip.Create("Sensei speech", item.Audio.Samples.Length, 1, item.Audio.SampleRate, false);
                     clip.SetData(item.Audio.Samples, 0);
                     source.clip = clip;
                     source.Play();
+                    if (source.isPlaying) { item.Started = true; item.OnStarted?.Invoke(); }
                     Debug.Log($"RPS_PLAY generation={item.Generation}");
                 }
             }
@@ -95,7 +99,7 @@ namespace Sensei.Voice
             if (source != null) { source.Stop(); source.clip = null; }
             if (clip != null) Destroy(clip);
             clip = null;
-            active?.Result.TrySetResult(success);
+            if (active != null) active.Result.TrySetResult(active.Started ? (success ? PlayOutcome.Completed : PlayOutcome.StoppedAfterStart) : PlayOutcome.NotStarted);
             active = null;
         }
 
@@ -105,7 +109,7 @@ namespace Sensei.Voice
             lock (admission)
             {
                 closed = 1;
-                while (pending.TryDequeue(out Playback item)) item.Result.TrySetResult(false);
+                while (pending.TryDequeue(out Playback item)) item.Result.TrySetResult(PlayOutcome.NotStarted);
             }
         }
 
