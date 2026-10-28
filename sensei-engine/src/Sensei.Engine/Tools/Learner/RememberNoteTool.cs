@@ -3,6 +3,7 @@ using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
+using Sensei.Engine.Learner;
 
 namespace Sensei.Engine.Tools.Learner;
 
@@ -33,6 +34,9 @@ public sealed class RememberNoteTool : SenseiTool<RememberNoteArgs>
         """;
 
     protected override JsonTypeInfo<RememberNoteArgs> ArgsTypeInfo => SenseiJsonContext.Default.RememberNoteArgs;
+
+    public override string? ValidateArguments(RememberNoteArgs args) =>
+        PronunciationClaimGuard.Check(args.Key, args.Value) ? PronunciationClaimGuard.Detail : null;
 
     /// <summary>S54: at most this many distinct note keys.</summary>
     public const int MaxNotes = 30;
