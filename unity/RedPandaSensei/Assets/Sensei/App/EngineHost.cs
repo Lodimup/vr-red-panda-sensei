@@ -90,7 +90,7 @@ namespace Sensei.App
                 var created = await Task.Run(async () =>
                 {
                     var client = string.IsNullOrWhiteSpace(key) ? null : ChatClientFactory.Create(LlmSettings.FromEnvironment(env));
-                    return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = (ISpeechOutput?)speech ?? new UnavailableSpeechOutput(), Events = events, ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
+                    return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = (ISpeechOutput?)speech ?? new UnavailableSpeechOutput(), Events = events, Trace = new TurnLatency.Sink(), ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
                 });
                 if (destroyed) { await created.DisposeAsync(); return; }
                 engine = created; if (TestScriptParser.Enabled(testScript)) Debug.Log($"RPS_PROFILE sessions={created.GetProfile().Sessions.Count}"); hasKey = !string.IsNullOrWhiteSpace(key); ModelStatus = hasKey ? "ready" : "no key"; menu.RefreshStatus(); Report("RPS_BOOT step=5 ok");
@@ -167,14 +167,14 @@ namespace Sensei.App
             engine?.CancelGeneration(); speech?.Interrupt();
             Debug.Log($"RPS_INTERRUPT was_playing={wasPlaying.ToString().ToLowerInvariant()} stopped={(!SpeechPlaying).ToString().ToLowerInvariant()} stopped_ms={watch.ElapsedMilliseconds}");
         }
-        public async Task RunTranscript(string transcript)
+        internal async Task RunTranscript(string transcript, TurnLatency latency)
         {
             var current = engine; if (current == null || !hasKey) return;
             var token = ++turnToken; turnBusy = true; Interlocked.Increment(ref turnCount); TestTranscriptStarts++;
-            try { var watch = Stopwatch.StartNew(); var result = await Task.Run(() => current.RunTurnAsync(transcript, lifetime.Token)); FinishTurn(result.Status, result.ErrorCode); Debug.Log(LogRedactor.Redact($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={string.Join(",", result.ToolCalls.Select(t => t.Tool))}", logKey)); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message); }
+            try { TurnLatency.Active = latency; var watch = Stopwatch.StartNew(); var result = await Task.Run(() => current.RunTurnAsync(transcript, lifetime.Token)); FinishTurn(result.Status, result.ErrorCode); Debug.Log(LogRedactor.Redact($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={string.Join(",", result.ToolCalls.Select(t => t.Tool))}", logKey)); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message); }
             catch (OperationCanceledException) { }
             catch (Exception e) { Debug.LogError("RPS_TURN failed type=" + e.GetType().Name); }
-            finally { if (token == turnToken) turnBusy = false; Interlocked.Decrement(ref turnCount); }
+            finally { latency.Mark("turn_end"); TurnLatency.Active = null; if (token == turnToken) turnBusy = false; Interlocked.Decrement(ref turnCount); }
         }
         private sealed class UnavailableSpeechOutput : ISpeechOutput { public Task<SpeechOutcome> SpeakAsync(SpeechRequest request, CancellationToken ct) => Task.FromResult(new SpeechOutcome(SpeechStatuses.Failed, "voice unavailable", 0)); }
 

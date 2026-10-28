@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Sensei.Engine.Speech;
 
 namespace Sensei.App.Core
 {
@@ -26,6 +27,38 @@ namespace Sensei.App.Core
         }
     }
     public enum PlayOutcome { Completed, StoppedAfterStart, NotStarted }
+
+    public sealed class SpeechChunk
+    {
+        public SpeechSegment Segment { get; }
+        public string Text { get; }
+        public int SegmentIndex { get; }
+        public bool First { get; }
+        internal SpeechChunk(SpeechSegment segment, string text, int segmentIndex, bool first)
+        { Segment = segment; Text = text; SegmentIndex = segmentIndex; First = first; }
+    }
+
+    public static class SpeechChunker
+    {
+        public static List<SpeechChunk> Split(IReadOnlyList<SpeechSegment> segments)
+        {
+            var chunks = new List<SpeechChunk>();
+            for (int index = 0; index < segments.Count; index++)
+            {
+                var segment = segments[index]; var text = segment.Text; int start = 0; bool first = true;
+                for (int i = 0; i < text.Length; i++)
+                {
+                    if ("。！？!?.".IndexOf(text[i]) < 0 || (i + 1 < text.Length && !char.IsWhiteSpace(text[i + 1]))) continue;
+                    int end = i + 1;
+                    while (end < text.Length && char.IsWhiteSpace(text[end])) end++;
+                    chunks.Add(new SpeechChunk(segment, text.Substring(start, end - start), index, first));
+                    first = false; start = end; i = end - 1;
+                }
+                if (start < text.Length || first) chunks.Add(new SpeechChunk(segment, text.Substring(start), index, first));
+            }
+            return chunks;
+        }
+    }
 
     public static class SpeechPipeline
     {

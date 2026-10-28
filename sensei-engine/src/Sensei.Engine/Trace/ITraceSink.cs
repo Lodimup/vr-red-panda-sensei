@@ -10,6 +10,9 @@ public interface ITraceSink
     void Write(TraceEntry entry);
 }
 
+/// <summary>Opt in to additional model-round timing entries on the existing trace sink.</summary>
+public interface IRoundTraceSink : ITraceSink { }
+
 /// <summary>One trace line (S28, S86). Every string is sanitized (S77).</summary>
 public sealed class TraceEntry
 {
