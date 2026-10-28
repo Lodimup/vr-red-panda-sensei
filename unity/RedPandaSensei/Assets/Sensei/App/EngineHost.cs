@@ -47,8 +47,14 @@ namespace Sensei.App
                 });
                 engine = created; hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
                 if (string.IsNullOrWhiteSpace(key)) { Report("No API key. Push sensei.env (see README)."); return; }
-                if (await EventTurn("session_start")) Report("RPS_BOOT step=7 ok");
-                else Report("RPS_BOOT step=7 fail");
+                if (await EventTurn("session_start")) { Report("RPS_BOOT step=7 ok"); if (label != null) label.gameObject.SetActive(false); }
+                else { Report("RPS_BOOT step=7 fail"); return; }
+                if (env.TryGetValue("RPS_TEST_TURN", out var testTurn) && !string.IsNullOrWhiteSpace(testTurn))
+                {
+                    Debug.Log("RPS_TEST_TURN sent");
+                    var testResult = await Task.Run(() => created.RunTurnAsync(testTurn, lifetime.Token));
+                    Debug.Log($"RPS_TEST_TURN status={testResult.Status}");
+                }
             }
             catch (Exception error) { Report($"RPS_BOOT fail type={error.GetType().Name}"); }
         }

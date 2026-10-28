@@ -19,7 +19,9 @@ namespace Sensei.App
             mat = GameObject.CreatePrimitive(PrimitiveType.Cube);
             mat.name = "Practice tray"; mat.transform.SetParent(transform, false);
             mat.transform.localPosition = new Vector3(0, 0.79f, 0); mat.transform.localScale = new Vector3(1.4f, 0.02f, 0.5f);
-            mat.GetComponent<Renderer>().material.color = new Color(0.56f, 0.36f, 0.19f);
+            var trayRenderer = mat.GetComponent<Renderer>();
+            trayRenderer.material = new Material(Resources.Load<Material>("SenseiCard"));
+            trayRenderer.material.color = new Color(0.56f, 0.36f, 0.19f);
             Destroy(mat.GetComponent<Collider>());
             foreach (var region in new[] { "left", "center", "right" })
             {

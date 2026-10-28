@@ -43,6 +43,7 @@ pid = None
 buffer = b''
 booted = False
 turn_done = False
+test_done = os.environ.get("RPS_EXPECT_TEST_TURN") != "1"
 def current_pid():
     result = subprocess.run(adb + ['shell', 'pidof', package], capture_output=True, text=True)
     values = result.stdout.split()
@@ -65,6 +66,7 @@ try:
             buffer = b''
             booted = False
             turn_done = False
+            test_done = os.environ.get("RPS_EXPECT_TEST_TURN") != "1"
             if pid:
                 process = subprocess.Popen(adb + ['logcat', '--pid=' + pid, '-s', 'Unity', '-v', 'brief'], stdout=subprocess.PIPE)
                 selector.register(process.stdout, selectors.EVENT_READ)
@@ -96,7 +98,10 @@ try:
             if 'RPS_TURN status=' in line:
                 if 'RPS_TURN status=completed ' not in line: sys.exit(1)
                 turn_done = True
-            if booted and turn_done:
+            if 'RPS_TEST_TURN status=' in line:
+                if 'RPS_TEST_TURN status=completed' not in line: sys.exit(1)
+                test_done = True
+            if booted and turn_done and test_done:
                 if current_pid() != pid:
                     break
                 dump = subprocess.run(adb + ['shell', 'dumpsys', 'activity', 'activities'], text=True, capture_output=True, check=True).stdout

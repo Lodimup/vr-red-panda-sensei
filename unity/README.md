@@ -9,8 +9,10 @@ controllers are asleep.
 From the repository root on macOS:
 
 ```bash
-bash tools/unity/sync-engine.sh
-bash tools/unity/build-android.sh
+export BERMUDA_THREAD_AGENT=quest-builder
+bermuda thread with quest --ttl 20m --why 'Android build' -- \
+  bermuda thread with android-build --ttl 20m --why 'Android build' -- \
+  bash tools/unity/build-android.sh
 ```
 
 The sync script publishes the unchanged netstandard2.1 engine and copies its
@@ -38,10 +40,9 @@ bermuda thread with quest --ttl 15m --why 'u0 install' -- \
 Set `QUEST_SERIAL` when more than one device is connected; otherwise `adb` uses
 the sole connected device. The run script resolves
 the installed launcher activity, installs the APK, clears logcat, starts the app
-and prints `RPS_` messages for up to 180 seconds. It succeeds only at
-`RPS_SMOKE done`. The world-space label displays the last smoke status 1.5 metres
-in front of the camera. Speech is logged until the separate voice slice supplies
-the real speech port.
+and prints `RPS_` messages for up to 180 seconds. It succeeds after boot step 7
+and a completed session-start turn. The status label is hidden after boot. Speech
+is logged until the separate voice slice supplies the real speech port.
 
 For developer-mode desk testing, the run script simulates the proximity sensor
 and temporarily pauses the guardian boundary. It restores the physical sensor and
@@ -50,6 +51,17 @@ If a Quest launch-check or guardian dialog remains, it restarts the Quest shell
 and retries the launch once.
 
 The boot scene contains the Meta camera rig and a passthrough underlay. The
-offline spawn must succeed before the live OpenRouter turn. The live turn must
-complete with a `speak` call and both Japanese and English segments. Engine
-exceptions are reported in logcat; no engine code is altered by the shell.
+session-start turn greets the learner through the engine. Scene changes are
+rendered from engine events; engine exceptions are reported in logcat.
+
+## Development scene check
+
+To exercise a scene change after the greeting, provision an optional test turn and tell the runner to wait for it. The turn uses the normal engine conversation path; the app does not log its text. This is for development checks only.
+
+```bash
+export RPS_EXPECT_TEST_TURN=1
+bash tools/unity/push-env.sh --test-turn "Please show me an apple, a cup and a box."
+bash tools/unity/run-quest.sh
+```
+
+Run the commands under the shared Quest lease as described above. Provision without `--test-turn` to remove the test instruction for ordinary use.
