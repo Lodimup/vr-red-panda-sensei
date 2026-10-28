@@ -18,7 +18,7 @@ namespace Sensei.App
     public sealed class PushToTalk : MonoBehaviour
     {
         private EngineHost host = null!; private SenseiView sensei = null!; private MicCapture mic = null!; private YouSaidLine line = null!; private SenseVoiceRecognizer? recognizer;
-        private InputAction button = null!; private string? testAudio; private bool debug; private string? secret; private bool held; private float started; private int captureEpoch;
+        private InputAction button = null!; private string? testAudio; private bool debug; private string? secret; private bool held; private bool micReady; private float started; private int captureEpoch;
         public void Initialize(EngineHost h, SenseiView s, YouSaidLine l, SenseVoiceRecognizer? r, string? audio, bool debugText, string? key)
         {
             host = h; sensei = s; line = l; recognizer = r; testAudio = audio; debug = debugText; secret = key; mic = gameObject.AddComponent<MicCapture>();
@@ -31,10 +31,14 @@ namespace Sensei.App
             else while (!host.VoiceIdle) yield return null;
             Press(); yield return new WaitForSeconds(seconds > 0 ? seconds : 0.5f); Release();
         }
+        private void Update()
+        {
+            if (held && !micReady && string.IsNullOrEmpty(testAudio) && mic.IsRecording) { micReady = true; Debug.Log("RPS_MIC ready"); }
+        }
         private void Press()
         {
             if (held || !host.CanTalk || recognizer == null) return;
-            held = true; captureEpoch++; started = Time.realtimeSinceStartup; Debug.Log("RPS_PTT start"); host.InterruptSpeech(); sensei.SetTalkHeld(true); line.Set("Listening…");
+            held = true; micReady = false; captureEpoch++; started = Time.realtimeSinceStartup; Debug.Log("RPS_PTT start"); host.InterruptSpeech(); sensei.SetTalkHeld(true); line.Set("Listening…");
             if (!string.IsNullOrEmpty(testAudio)) return;
             try { mic.Begin(); } catch (Exception e) { Debug.LogError("RPS_MIC fail type=" + e.GetType().Name); held = false; sensei.SetTalkHeld(false); line.Set("Couldn't hear that"); }
         }
@@ -57,6 +61,7 @@ namespace Sensei.App
                     var wave = WaveAudio.Decode(request.downloadHandler.data); samples = WaveAudio.Resample(wave.Samples, wave.SampleRate, 16000);
                 }
                 else samples = mic.End();
+                if (debug) { double energy = 0; foreach (var sample in samples) energy += sample * sample; Debug.Log($"RPS_MIC samples={samples.Length} rms={(samples.Length == 0 ? 0 : Math.Sqrt(energy / samples.Length)):F6}"); }
                 var watch = Stopwatch.StartNew(); var transcript = await recognizer!.TranscribeAsync(samples, CancellationToken.None);
                 if (epoch != captureEpoch) return;
                 string log = $"RPS_ASR ms={watch.ElapsedMilliseconds} chars={transcript.Length}";
