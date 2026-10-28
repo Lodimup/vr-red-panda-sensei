@@ -42,7 +42,7 @@ namespace Sensei.App
         {
             try
             {
-                var env = SenseiEnvFile.Load(Path.Combine(path, "sensei.env")); env.TryGetValue("SENSEI_LLM_API_KEY", out var key); env.TryGetValue("RPS_DEBUG_TEXT", out var debugText);
+                var env = SenseiEnvFile.Load(Path.Combine(path, "sensei.env")); env.TryGetValue("SENSEI_LLM_API_KEY", out var key); env.TryGetValue("RPS_DEBUG_TEXT", out var debugText); env.TryGetValue("RPS_TEST_SCRIPT", out var testScript);
                 Report("RPS_BOOT step=1 ok");
                 string? ttsDir = null, asrDir = null;
                 try { ttsDir = await VoiceModelInstaller.EnsureInstalledAsync("supertonic3", "2026-05-11", lifetime.Token); }
@@ -50,7 +50,7 @@ namespace Sensei.App
                 try { asrDir = await VoiceModelInstaller.EnsureInstalledAsync("sensevoice-nano", "2025-12-17", lifetime.Token); }
                 catch (Exception e) { Debug.LogError("RPS_BOOT step=2 fail SenseVoice-nano " + e.GetType().Name); }
                 if (ttsDir != null && asrDir != null) Report("RPS_BOOT step=2 ok");
-                try { if (ttsDir == null) throw new IOException(); tts = await LocalTts.LoadAsync(ttsDir); await tts.SynthesizeAsync("あ", "ja", 1f, lifetime.Token); speech = new LocalSpeechOutput(tts, player!, queue, debugText == "1", key); speech.SegmentStarted += segment => captions!.Show(segment, speech.CurrentCaptions); speech.UtteranceEnded += () => captions!.End(); Report("RPS_BOOT step=3 ok"); }
+                try { if (ttsDir == null) throw new IOException(); tts = await LocalTts.LoadAsync(ttsDir); await tts.SynthesizeAsync("あ", "ja", 1f, lifetime.Token); speech = new LocalSpeechOutput(tts, player!, queue, debugText == "1" && TestScriptParser.Enabled(testScript), key); speech.SegmentStarted += segment => captions!.Show(segment, speech.CurrentCaptions); speech.UtteranceEnded += () => captions!.End(); Report("RPS_BOOT step=3 ok"); }
                 catch (Exception e) { voiceFailure = "Supertonic voice could not be loaded."; Report("RPS_BOOT step=3 fail Supertonic " + e.GetType().Name); }
                 if (destroyed) { tts?.Dispose(); return; }
                 try { if (asrDir == null) throw new IOException(); recognizer = await SenseVoiceRecognizer.LoadAsync(asrDir, useItn: false); Report("RPS_BOOT step=4 ok"); }
@@ -65,7 +65,7 @@ namespace Sensei.App
                     return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = (ISpeechOutput?)speech ?? new UnavailableSpeechOutput(), Events = events, ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
                 });
                 if (destroyed) { await created.DisposeAsync(); return; }
-                engine = created; if (env.TryGetValue("RPS_TEST_SCRIPT", out var testScript) && TestScriptParser.Enabled(testScript)) Debug.Log($"RPS_PROFILE sessions={created.GetProfile().Sessions.Count}"); hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.SetTestFrame(env.TryGetValue("RPS_TEST_FRAME", out var testFrame) && testFrame == "sensei"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); if (destroyed) return; area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
+                engine = created; if (TestScriptParser.Enabled(testScript)) Debug.Log($"RPS_PROFILE sessions={created.GetProfile().Sessions.Count}"); hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.SetTestFrame(env.TryGetValue("RPS_TEST_FRAME", out var testFrame) && testFrame == "sensei"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); if (destroyed) return; area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
                 if (string.IsNullOrWhiteSpace(key)) { Report("No API key. Push sensei.env (see README)." + (voiceFailure == null ? "" : "\n" + voiceFailure)); return; }
                 var greeting = EventTurn("session_start");
                 if (TestScriptParser.Enabled(testScript)) gameObject.AddComponent<TestScriptDriver>().Initialize(this, pushToTalk, path, testScript!);
