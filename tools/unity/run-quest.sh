@@ -41,6 +41,9 @@ process = None
 selector = selectors.DefaultSelector()
 pid = None
 buffer = b''
+booted = False
+turn_done = False
+test_done = os.environ.get("RPS_EXPECT_TEST_TURN") != "1"
 def current_pid():
     result = subprocess.run(adb + ['shell', 'pidof', package], capture_output=True, text=True)
     values = result.stdout.split()
@@ -61,6 +64,9 @@ try:
             stop_stream()
             pid = observed
             buffer = b''
+            booted = False
+            turn_done = False
+            test_done = os.environ.get("RPS_EXPECT_TEST_TURN") != "1"
             if pid:
                 process = subprocess.Popen(adb + ['logcat', '--pid=' + pid, '-s', 'Unity', '-v', 'brief'], stdout=subprocess.PIPE)
                 selector.register(process.stdout, selectors.EVENT_READ)
@@ -87,8 +93,15 @@ try:
             line = raw.decode('utf-8', errors='replace').rstrip('\r')
             if 'RPS_' not in line: continue
             print(line, flush=True)
-            if 'RPS_SMOKE error' in line: sys.exit(1)
-            if 'RPS_SMOKE done' in line:
+            if re.search(r'RPS_BOOT (?:step=\d+ )?fail', line) or 'RPS_TURN failed' in line: sys.exit(1)
+            if 'RPS_BOOT step=7 ok' in line: booted = True
+            if 'RPS_TURN status=' in line:
+                if 'RPS_TURN status=completed ' not in line: sys.exit(1)
+                turn_done = True
+            if 'RPS_TEST_TURN status=' in line:
+                if 'RPS_TEST_TURN status=completed' not in line: sys.exit(1)
+                test_done = True
+            if booted and turn_done and test_done:
                 if current_pid() != pid:
                     break
                 dump = subprocess.run(adb + ['shell', 'dumpsys', 'activity', 'activities'], text=True, capture_output=True, check=True).stdout
@@ -103,8 +116,13 @@ try:
                     time.sleep(2)
                     with open(screenshot, 'wb') as output:
                         subprocess.run(adb + ['exec-out', 'screencap', '-p'], stdout=output, check=True)
+                second_screenshot = os.environ.get('RPS_SCREENSHOT_PATH_2')
+                if second_screenshot:
+                    time.sleep(1)
+                    with open(second_screenshot, 'wb') as output:
+                        subprocess.run(adb + ['exec-out', 'screencap', '-p'], stdout=output, check=True)
                 sys.exit(0)
-    print('RPS_SMOKE error timeout: no completed turn within 180 seconds', flush=True)
+    print('RPS_TURN timeout: no boot step 7 and completed turn within 180 seconds', flush=True)
 finally:
     stop_stream()
     selector.close()

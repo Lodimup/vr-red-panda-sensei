@@ -27,7 +27,7 @@ namespace Sensei.Unity
             foreach (var segment in request.Segments)
             {
                 ct.ThrowIfCancellationRequested();
-                var message = $"RPS_SPEAK lang={segment.Lang} chars={segment.Text.Length}";
+                var message = $"RPS_SPEAK lang={segment.Lang} chars={segment.Text.Length} synth_ms=0";
                 if (debugText) message += " text=" + Redact(segment.Text, secret).Replace('\n', ' ').Replace('\r', ' ');
                 Debug.Log(message);
             }

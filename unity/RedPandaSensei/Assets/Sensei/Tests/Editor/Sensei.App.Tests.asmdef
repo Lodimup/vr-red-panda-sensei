@@ -1,0 +1,9 @@
+{
+  "name": "Sensei.App.Tests",
+  "references": ["Sensei.App.Core"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "overrideReferences": true,
+  "precompiledReferences": ["Sensei.Engine.dll", "nunit.framework.dll"],
+  "autoReferenced": false
+}

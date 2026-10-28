@@ -5,6 +5,7 @@ unity=${UNITY_EDITOR:-/Applications/Unity/Hub/Editor/6000.6.5f1/Unity.app/Conten
 project="$repo/unity/RedPandaSensei"
 mkdir -p "$project/Logs"
 bash "$repo/tools/unity/sync-engine.sh"
+bash "$repo/tools/unity/sync-art.sh"
 if ! "$unity" -batchmode -quit -projectPath "$project" -buildTarget Android \
     -executeMethod Sensei.Editor.BuildScript.BuildAndroid -logFile "$project/Logs/build-android.log"; then
   tail -80 "$project/Logs/build-android.log" >&2
