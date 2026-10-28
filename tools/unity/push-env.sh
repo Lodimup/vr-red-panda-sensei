@@ -14,7 +14,7 @@ if [[ -n "$serial" ]]; then adb_device+=(-s "$serial"); fi
 # Key source, first match: SENSEI_LLM_API_KEY in the environment; a prompt when no KEYS.toml exists and stdin is a terminal; else KEYS.toml.
 if [[ -n ${SENSEI_LLM_API_KEY:-} ]]; then
 api_key=$SENSEI_LLM_API_KEY
-elif [[ ! -f "$HOME/KEYS.toml" && -t 0 ]]; then
+elif [[ -t 0 ]]; then
 read -rs -p 'OpenRouter API key: ' api_key; echo >&2
 else
 # RULING(Handler 2026-10-28): read only this key; never echo or bundle it.
