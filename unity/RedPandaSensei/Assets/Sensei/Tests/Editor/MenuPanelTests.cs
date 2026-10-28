@@ -15,7 +15,9 @@ public sealed class MenuPanelTests
             var buttons = root.GetComponentsInChildren<MenuButton>(true);
             Assert.AreEqual(8, buttons.Length);
             var backgroundQueue = root.transform.Find("Menu background").GetComponent<Renderer>().sharedMaterial.renderQueue;
+            Assert.Greater(backgroundQueue, 3000);
             Assert.That(buttons.All(b => b.transform.Find("Button background").GetComponent<Renderer>().sharedMaterial.renderQueue > backgroundQueue));
+            Assert.That(buttons.All(b => b.GetComponentInChildren<TextMeshPro>(true).fontSharedMaterial.renderQueue > b.transform.Find("Button background").GetComponent<Renderer>().sharedMaterial.renderQueue));
             CollectionAssert.AreEquivalent(new[] { "I know no Japanese", "A few words", "Beginner", "Intermediate", "Advanced", "Explain in English", "Session summary", "Reset progress" }, buttons.Select(b => b.GetComponentInChildren<TextMeshPro>(true).text));
         }
         finally { Object.DestroyImmediate(root); Object.DestroyImmediate(hand); Object.DestroyImmediate(head); Object.DestroyImmediate(owner); }
