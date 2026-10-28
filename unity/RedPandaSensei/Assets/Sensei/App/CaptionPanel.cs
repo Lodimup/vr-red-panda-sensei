@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Text;
 using Sensei.Engine.Speech;
+using Sensei.App.Core;
 using TMPro;
 using UnityEngine;
 
@@ -9,6 +10,7 @@ namespace Sensei.App
 {
     public sealed class CaptionPanel : MonoBehaviour
     {
+        private string? key; public void SetKey(string? value) => key = value;
         private Transform head = null!; private TextMeshPro text = null!; private Coroutine? clear;
         public void Initialize(Transform headTransform)
         {
@@ -32,9 +34,9 @@ namespace Sensei.App
                 if (visibility.ShowRomaji && !string.IsNullOrWhiteSpace(segment.Romaji)) lines.Append('\n').Append(segment.Romaji);
                 if (visibility.ShowTranslation && !string.IsNullOrWhiteSpace(segment.Translation)) lines.Append('\n').Append(segment.Translation);
             }
-            text.text = lines.ToString();
+            text.text = LogRedactor.Redact(lines.ToString(), key);
         }
-        public void ShowError(string message) { if (clear != null) StopCoroutine(clear); text.text = message; clear = StartCoroutine(ClearLater()); }
+        public void ShowError(string message) { if (clear != null) StopCoroutine(clear); text.text = LogRedactor.Redact(message, key); clear = StartCoroutine(ClearLater()); }
         public void End() { if (clear != null) StopCoroutine(clear); clear = StartCoroutine(ClearLater()); }
         private IEnumerator ClearLater() { yield return new WaitForSeconds(4); text.text = ""; clear = null; }
         private void LateUpdate() { var direction = head.position - transform.position; direction.y = 0; if (direction.sqrMagnitude > 0.001f) transform.rotation = Quaternion.LookRotation(-direction); }
