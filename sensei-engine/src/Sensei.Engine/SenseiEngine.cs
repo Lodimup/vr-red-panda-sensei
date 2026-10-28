@@ -175,7 +175,11 @@ public sealed class SenseiEngine : IAsyncDisposable
         GuardAsync(nameof(RunPlayerEventTurnAsync), () =>
         {
             if (eventKind is null || !PlayerEventKinds.Contains(eventKind))
-                return Task.FromResult(new TurnResult { TurnId = _core.CurrentTurnId, GenerationId = _core.CurrentGeneration, Status = TurnStatuses.Failed, ErrorCode = "invalid_player_event" });
+            {
+                long turnId, generation;
+                lock (_core.Sync) { turnId = _core.CurrentTurnId; generation = _core.CurrentGeneration; }
+                return Task.FromResult(new TurnResult { TurnId = turnId, GenerationId = generation, Status = TurnStatuses.Failed, ErrorCode = "invalid_player_event" });
+            }
             return RunGatedAsync(() => Task.FromResult(StartTurn($"(player event: {eventKind})", null, eventKind)), ct);
         });
 
