@@ -9,8 +9,8 @@ public class GuardBoundaryTests
     [InlineData("This is N5 vocabulary.", false)]
     [InlineData("JLPT N4 words are next.", false)]
     [InlineData("you can learn JLPT words", false)]
-    [InlineData("Your Japanese level is improving", true)] // RULING(Handler 2026-10-28): preserve existing learner-level phrases.
-    [InlineData("Your level is improving", true)] // RULING(Handler 2026-10-28): preserve existing learner-level phrases.
+    [InlineData("Your Japanese level is improving", true)] // Orchestrator decision 2026-10-28 (not a Handler ruling): preserve existing learner-level phrases.
+    [InlineData("Your level is improving", true)] // Orchestrator decision 2026-10-28 (not a Handler ruling): preserve existing learner-level phrases.
     [InlineData("U are Ｎ５", false)]
     [InlineData("U are Ｎ5", false)]
     [InlineData("きみのレベル", false)]
