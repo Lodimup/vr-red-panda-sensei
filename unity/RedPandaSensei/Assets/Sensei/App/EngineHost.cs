@@ -26,7 +26,7 @@ namespace Sensei.App
         private int finishedTurns; private int hintShownAt = -1; private string? logKey;
         private StatusPanel statusPanel = null!; private TaskCard taskCard = null!; private HintCard hintCard = null!; private MenuPanel menu = null!;
         public string ModelStatus { get; private set; } = "no key"; public string VoiceStatus => speech != null ? "ready" : "not loaded"; public string RecognizerStatus => recognizer != null ? "ready" : "not loaded";
-        private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private int turnCount; public int TestTranscriptStarts { get; private set; } private string engineState = "idle"; private string? voiceFailure;
+        private UnityEngineEvents? engineEvents; private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private int turnCount; public int TestTranscriptStarts { get; private set; } private string engineState = "idle"; private string? voiceFailure;
 
         private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey; private bool destroyed;
         private void Start()
@@ -54,23 +54,29 @@ namespace Sensei.App
             if (text.StartsWith("RPS_BOOT step="))
             {
                 var names = new[] { "", "Load settings", "Install voice models", "Load voice", "Load recognizer", "Load profile", "Place practice area", "Start session" };
-                if (text.Length > 14 && int.TryParse(text.Substring(14, 1), out var step) && step > 0 && step < names.Length)
+                var step = 0;
+                if (text.Length > 14 && int.TryParse(text.Substring(14, 1), out step) && step > 0 && step < names.Length)
                     display = names[step] + (text.Contains("voice_deferred") ? ": waiting for voice" : text.Contains("fail") ? ": failed" : ": ready");
+                if (text.Contains("fail") && (step == 2 || step == 3 || step == 4)) {
+                    var model = text.Contains("Supertonic") ? "Supertonic (supertonic3)" : text.Contains("SenseVoice") ? "SenseVoice-nano" : "voice model";
+                    var reason = text.Split(' ').Last();
+                    display = names[step] + ": " + model + " failed (" + reason + ")";
+                }
             }
-            statusPanel.Add(display, text.Contains("fail") || text.StartsWith("No API key"));
+            statusPanel.Add(LogRedactor.Redact(display, logKey), text.Contains("fail") || text.StartsWith("No API key"));
         }
         private async Task BootAsync(string path, YouSaidLine you)
 
         {
             try
             {
-                var env = SenseiEnvFile.Load(Path.Combine(path, "sensei.env")); env.TryGetValue("SENSEI_LLM_API_KEY", out var key); env.TryGetValue("RPS_DEBUG_TEXT", out var debugText); env.TryGetValue("RPS_TEST_SCRIPT", out var testScript); logKey = key;
+                var env = SenseiEnvFile.Load(Path.Combine(path, "sensei.env")); env.TryGetValue("SENSEI_LLM_API_KEY", out var key); env.TryGetValue("RPS_DEBUG_TEXT", out var debugText); env.TryGetValue("RPS_TEST_SCRIPT", out var testScript); logKey = key; taskCard.SetKey(key); hintCard.SetKey(key); captions?.SetKey(key); you.SetKey(key);
                 Report("RPS_BOOT step=1 ok");
                 string? ttsDir = null, asrDir = null;
                 try { ttsDir = await VoiceModelInstaller.EnsureInstalledAsync("supertonic3", "2026-05-11", lifetime.Token); }
-                catch (Exception e) { Debug.LogError("RPS_BOOT step=2 fail Supertonic " + e.GetType().Name); }
+                catch (Exception e) { Report("RPS_BOOT step=2 fail Supertonic " + e.GetType().Name); }
                 try { asrDir = await VoiceModelInstaller.EnsureInstalledAsync("sensevoice-nano", "2025-12-17", lifetime.Token); }
-                catch (Exception e) { Debug.LogError("RPS_BOOT step=2 fail SenseVoice-nano " + e.GetType().Name); }
+                catch (Exception e) { Report("RPS_BOOT step=2 fail SenseVoice-nano " + e.GetType().Name); }
                 if (ttsDir != null && asrDir != null) Report("RPS_BOOT step=2 ok");
                 try { if (ttsDir == null) throw new IOException(); tts = await LocalTts.LoadAsync(ttsDir); await tts.SynthesizeAsync("あ", "ja", 1f, lifetime.Token); speech = new LocalSpeechOutput(tts, player!, queue, debugText == "1" && TestScriptParser.Enabled(testScript), key); speech.SegmentStarted += segment => captions!.Show(segment, speech.CurrentCaptions); speech.UtteranceEnded += () => captions!.End(); Report("RPS_BOOT step=3 ok"); }
                 catch (Exception e) { voiceFailure = "Supertonic voice could not be loaded."; Report("RPS_BOOT step=3 fail Supertonic " + e.GetType().Name); }
@@ -80,7 +86,7 @@ namespace Sensei.App
                 if (destroyed) { tts?.Dispose(); recognizer?.Dispose(); return; }
                 env.TryGetValue("RPS_TEST_AUDIO", out var testAudio); env.TryGetValue("RPS_TEST_PTT_SECONDS", out var testSeconds); env.TryGetValue("RPS_TEST_INTERRUPT_MS", out var testInterrupt);
                 pushToTalk = gameObject.AddComponent<PushToTalk>(); pushToTalk.Initialize(this, sensei, you, recognizer, testAudio, debugText == "1", key);
-                var events = new UnityEngineEvents(queue, area, sensei, pace => slow = pace == "slow", state => engineState = state);
+                var events = new UnityEngineEvents(queue, area, sensei, pace => slow = pace == "slow", state => engineState = state); engineEvents = events;
                 events.Hint = hint => { hintShownAt = finishedTurns; hintCard.Show(hint); }; events.Task = task => { hintCard.Clear(); taskCard.Show(task); }; events.Support = taskCard.SetSupport;
                 var created = await Task.Run(async () =>
                 {
@@ -129,8 +135,8 @@ namespace Sensei.App
         }
         public void ToggleMenu() => menu.Toggle();
         public async Task<bool> SetBand(string band) { var current = engine; if (current == null) return false; try { await Task.Run(() => current.SetStartingBandAsync(band, lifetime.Token)); return true; } catch (Exception e) { Debug.LogError("RPS_BAND failed type=" + e.GetType().Name); return false; } }
-        public async Task<string> Summary() { var current = engine; if (current == null) return "Nothing practiced yet."; return MenuState.FormatSummary(await Task.Run(() => current.GetSessionSummary())); }
-        public async Task<bool> ResetProgress() { var current = engine; if (current == null) return false; try { await Task.Run(() => current.ResetProfileAsync(lifetime.Token)); taskCard.Show(null); hintCard.Clear(); return true; } catch (Exception e) { Debug.LogError("RPS_RESET failed type=" + e.GetType().Name); return false; } }
+        public async Task<string> Summary() { var current = engine; if (current == null) return "Nothing practiced yet."; return LogRedactor.Redact(MenuState.FormatSummary(await Task.Run(() => current.GetSessionSummary())), logKey); }
+        public async Task<bool> ResetProgress() { var current = engine; if (current == null) return false; try { var previous = await Task.Run(async () => { var active = current.GetActiveTask(); await current.ResetProfileAsync(lifetime.Token); return active; }); engineEvents?.ResetPanels(); taskCard.Reset(previous); hintCard.Clear(); return true; } catch (Exception e) { Debug.LogError("RPS_RESET failed type=" + e.GetType().Name); return false; } }
 
         public bool CanTalk => ready && hasKey;
         public bool VoiceIdle => CanTalk && !turnBusy && !(player?.IsPlaying ?? false);
