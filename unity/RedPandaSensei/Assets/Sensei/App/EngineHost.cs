@@ -40,7 +40,7 @@ namespace Sensei.App
             statusPanel = new GameObject("Status panel").AddComponent<StatusPanel>(); statusPanel.Initialize(rig.centerEyeAnchor, panelFont);
             taskCard = new GameObject("Task card").AddComponent<TaskCard>(); taskCard.Initialize(area.transform, panelFont);
             hintCard = new GameObject("Hint card").AddComponent<HintCard>(); hintCard.Initialize(area.transform, panelFont);
-            menu = new GameObject("Menu panel").AddComponent<MenuPanel>(); menu.Initialize(rig.leftHandAnchor, this, panelFont);
+            menu = new GameObject("Menu panel").AddComponent<MenuPanel>(); menu.Initialize(rig.leftHandAnchor, rig.centerEyeAnchor, this, panelFont);
             var controller = gameObject.AddComponent<ControllerInput>(); controller.Initialize(this, area, rig.rightHandAnchor);
             var captionObject = new GameObject("Captions"); captionObject.transform.SetParent(area.transform, false); captions = captionObject.AddComponent<CaptionPanel>(); captions.Initialize(rig.centerEyeAnchor);
             var youObject = new GameObject("You said"); youObject.transform.SetParent(area.transform, false); var you = youObject.AddComponent<YouSaidLine>(); you.Initialize(rig.centerEyeAnchor);

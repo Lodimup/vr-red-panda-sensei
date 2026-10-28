@@ -3,6 +3,7 @@ using System;
 using Sensei.App.Core;
 using TMPro;
 using UnityEngine;
+using UnityEngine.XR;
 
 namespace Sensei.App
 {
@@ -12,10 +13,10 @@ namespace Sensei.App
     }
     public sealed class MenuPanel : MonoBehaviour
     {
-        private readonly MenuState state = new MenuState(); private EngineHost host = null!; private TextMeshPro status = null!, summary = null!, reset = null!;
-        public void Initialize(Transform hand, EngineHost owner, TMP_FontAsset? font)
+        private readonly MenuState state = new MenuState(); private Transform hand = null!, head = null!; private EngineHost host = null!; private TextMeshPro status = null!, summary = null!, reset = null!;
+        public void Initialize(Transform handTransform, Transform headTransform, EngineHost owner, TMP_FontAsset? font)
         {
-            host = owner; transform.SetParent(hand, false); transform.localPosition = new Vector3(0, .18f, .12f); transform.localRotation = Quaternion.Euler(-25, 0, 0);
+            host = owner; hand = handTransform; head = headTransform; transform.SetParent(hand, false); transform.localPosition = new Vector3(0, .18f, .12f); transform.localRotation = Quaternion.Euler(-25, 0, 0);
             PanelText.Surface(transform, "Menu background", Vector3.zero, new Vector3(.56f, .74f, .01f));
             status = PanelText.Create(transform, "Service status", new Vector3(0, .30f, -.012f), new Vector2(.52f, .1f), 0.20f, font);
             for (var i = 0; i < MenuState.Labels.Length; i++) { var index = i; Button(MenuState.Labels[i], .21f - i * .055f, font, async () => { summary.text = "Saving…"; summary.text = await host.SetBand(MenuState.BandFor(index)) ? "Starting point: " + MenuState.Labels[index] : "Could not save starting point."; }); }
@@ -32,7 +33,19 @@ namespace Sensei.App
             var box = go.AddComponent<BoxCollider>(); box.size = new Vector3(.5f, .048f, .02f); go.AddComponent<MenuButton>().Press = () => { if (label != "Reset progress") { state.CancelReset(); reset.text = "Reset progress"; } action(); };
             return PanelText.Create(go.transform, "Label", new Vector3(0, 0, -.005f), new Vector2(.49f, .048f), 0.20f, font);
         }
-        public void Toggle() { state.Toggle(); gameObject.SetActive(state.IsOpen); reset.text = "Reset progress"; RefreshStatus(); }
+        public void Toggle()
+        {
+            state.Toggle();
+            if (state.IsOpen)
+            {
+                var device = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+                var tracked = device.isValid && device.TryGetFeatureValue(CommonUsages.isTracked, out var value) && value;
+                // RULING(orchestrator 2026-10-28): untracked left controller uses a head-relative menu.
+                if (MenuState.PlacementFor(tracked) == MenuPlacement.InFrontOfHead) { transform.SetParent(head, false); transform.localPosition = new Vector3(0, -.15f, .6f); transform.localRotation = Quaternion.identity; }
+                else { transform.SetParent(hand, false); transform.localPosition = new Vector3(0, .18f, .12f); transform.localRotation = Quaternion.Euler(-25, 0, 0); }
+            }
+            gameObject.SetActive(state.IsOpen); reset.text = "Reset progress"; RefreshStatus();
+        }
         public void RefreshStatus() { if (status != null) status.text = $"LLM: {host.ModelStatus}\nVoice: {host.VoiceStatus}   Recognizer: {host.RecognizerStatus}"; }
     }
 }
