@@ -1,0 +1,11 @@
+{
+  "name": "com.supercapybara.sensei.voice",
+  "version": "1.0.0",
+  "displayName": "Sensei Voice",
+  "unity": "6000.0",
+  "description": "Local bilingual synthesis and audio recognition for Sensei.",
+  "dependencies": {
+    "com.supercapybara.sherpa-onnx": "1.13.8",
+    "com.unity.nuget.newtonsoft-json": "3.2.2"
+  }
+}

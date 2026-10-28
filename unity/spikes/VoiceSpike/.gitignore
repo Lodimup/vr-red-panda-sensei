@@ -1,0 +1,23 @@
+# Unity-generated state.
+Library/
+Temp/
+Logs/
+UserSettings/
+Build/
+MemoryCaptures/
+obj/
+.utmp/
+.vscode/
+*.csproj
+*.sln
+*.slnx
+
+# Bundled model downloads and generated speech stay local.
+Assets/StreamingAssets/supertonic3/
+Assets/StreamingAssets/sensevoice/
+Assets/StreamingAssets/sensevoice-nano/
+Assets/StreamingAssets/supertonic3.meta
+Assets/StreamingAssets/sensevoice.meta
+Assets/StreamingAssets/sensevoice-nano.meta
+Assets/StreamingAssets/asr-corpus/*.wav
+Assets/StreamingAssets/asr-corpus/*.wav.meta

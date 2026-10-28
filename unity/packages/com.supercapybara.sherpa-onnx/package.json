@@ -1,0 +1,8 @@
+{
+  "name": "com.supercapybara.sherpa-onnx",
+  "version": "1.13.8",
+  "displayName": "sherpa-onnx 1.13.8",
+  "unity": "6000.0",
+  "description": "Pinned offline speech runtime.",
+  "dependencies": {}
+}
