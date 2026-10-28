@@ -30,22 +30,57 @@ if "${adb_device[@]}" shell dumpsys activity activities | grep -Eq 'topResumedAc
 fi
 export RPS_QUEST_SERIAL="$serial"
 uv run --no-project python - <<'PY'
-import os, selectors, subprocess, sys, time
+import os, re, selectors, subprocess, sys, time
 serial = os.environ['RPS_QUEST_SERIAL']
-command = ['adb'] + (['-s', serial] if serial else []) + ['logcat', '-s', 'Unity', '-v', 'brief']
-process = subprocess.Popen(command, stdout=subprocess.PIPE)
+adb = ['adb'] + (['-s', serial] if serial else [])
+package = 'com.supercapybara.redpandasensei'
+launch = float(os.environ['RPS_LAUNCH_MONOTONIC'])
+deadline = launch + 180
+pid_deadline = time.monotonic() + 20
+process = None
 selector = selectors.DefaultSelector()
-selector.register(process.stdout, selectors.EVENT_READ)
-deadline = float(os.environ['RPS_LAUNCH_MONOTONIC']) + 180
-status = 1
+pid = None
 buffer = b''
+def current_pid():
+    result = subprocess.run(adb + ['shell', 'pidof', package], capture_output=True, text=True)
+    values = result.stdout.split()
+    return values[0] if result.returncode == 0 and values and values[0].isdigit() else None
+def stop_stream():
+    global process
+    if process is not None:
+        selector.unregister(process.stdout)
+        process.terminate()
+        try: process.wait(timeout=5)
+        except subprocess.TimeoutExpired: process.kill(); process.wait()
+        process.stdout.close()
+        process = None
 try:
     while time.monotonic() < deadline:
-        if not selector.select(timeout=min(1, max(0, deadline-time.monotonic()))):
-            if process.poll() is not None: break
+        observed = current_pid()
+        if observed != pid:
+            stop_stream()
+            pid = observed
+            buffer = b''
+            if pid:
+                process = subprocess.Popen(adb + ['logcat', '--pid=' + pid, '-s', 'Unity', '-v', 'brief'], stdout=subprocess.PIPE)
+                selector.register(process.stdout, selectors.EVENT_READ)
+            else:
+                pid_deadline = time.monotonic() + 20
+        if not pid:
+            if time.monotonic() >= pid_deadline:
+                print('RPS_SMOKE error: app process not found within 20 seconds', flush=True)
+                sys.exit(1)
+            time.sleep(0.25)
+            continue
+        if not selector.select(timeout=1):
+            if process.poll() is not None:
+                print('RPS_SMOKE error: logcat stopped', flush=True)
+                sys.exit(1)
             continue
         chunk = os.read(process.stdout.fileno(), 65536)
-        if not chunk: break
+        if not chunk:
+            print('RPS_SMOKE error: logcat closed', flush=True)
+            sys.exit(1)
         buffer += chunk
         while b'\n' in buffer:
             raw, buffer = buffer.split(b'\n', 1)
@@ -54,26 +89,24 @@ try:
             print(line, flush=True)
             if 'RPS_SMOKE error' in line: sys.exit(1)
             if 'RPS_SMOKE done' in line:
-                elapsed = time.monotonic() - float(os.environ['RPS_LAUNCH_MONOTONIC'])
-                print(f'launch_to_done_seconds={elapsed:.3f}', flush=True)
-                dump = subprocess.run(['adb'] + (['-s', serial] if serial else []) +
-                                      ['shell', 'dumpsys', 'activity', 'activities'],
-                                      text=True, capture_output=True, check=True).stdout
-                top = [item.strip() for item in dump.splitlines() if 'topResumedActivity=' in item]
-                app = next((item for item in top if 'com.supercapybara.redpandasensei' in item), None)
-                print('dumpsys_top=' + (app or (top[0] if top else 'not found')), flush=True)
+                if current_pid() != pid:
+                    break
+                dump = subprocess.run(adb + ['shell', 'dumpsys', 'activity', 'activities'], text=True, capture_output=True, check=True).stdout
+                top = next((item.strip() for item in dump.splitlines() if 'topResumedActivity=' in item), 'not found')
+                print('dumpsys_top=' + top, flush=True)
+                if not re.search(r'topResumedActivity=.*?\b' + re.escape(package) + r'/', top):
+                    print('RPS_SMOKE error: target activity is not resumed', flush=True)
+                    sys.exit(1)
+                print(f'launch_to_done_seconds={time.monotonic() - launch:.3f}', flush=True)
                 screenshot = os.environ.get('RPS_SCREENSHOT_PATH')
                 if screenshot:
-                    time.sleep(2) # Let the last status reach the headset display.
+                    time.sleep(2)
                     with open(screenshot, 'wb') as output:
-                        subprocess.run(['adb'] + (['-s', serial] if serial else []) +
-                                       ['exec-out', 'screencap', '-p'], stdout=output, check=True)
+                        subprocess.run(adb + ['exec-out', 'screencap', '-p'], stdout=output, check=True)
                 sys.exit(0)
     print('RPS_SMOKE error timeout: no completed turn within 180 seconds', flush=True)
 finally:
+    stop_stream()
     selector.close()
-    process.terminate()
-    try: process.wait(timeout=5)
-    except subprocess.TimeoutExpired: process.kill(); process.wait()
-sys.exit(status)
+sys.exit(1)
 PY

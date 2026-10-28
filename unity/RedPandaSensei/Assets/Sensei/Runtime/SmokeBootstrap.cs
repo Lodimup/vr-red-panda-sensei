@@ -30,10 +30,11 @@ namespace Sensei.Unity
                 Report("RPS_SMOKE starting");
                 var env = SenseiEnvFile.Load(Path.Combine(Application.persistentDataPath, "sensei.env"));
                 env.TryGetValue("SENSEI_LLM_API_KEY", out secret);
+                var debugText = env.TryGetValue("RPS_DEBUG_TEXT", out var debug) && debug == "1";
                 var store = new FileProfileStore(Path.Combine(Application.persistentDataPath, "profiles"));
                 var offline = await SenseiEngine.CreateAsync(new SenseiEngineOptions
                 {
-                    ChatClient = null, Speech = new LogSpeechOutput(), ProfileStore = store, ProfileId = "smoke"
+                    ChatClient = null, Speech = new LogSpeechOutput(debugText, secret), ProfileStore = store, ProfileId = "smoke"
                 }, lifetime.Token);
                 try
                 {
@@ -51,7 +52,7 @@ namespace Sensei.Unity
                 using var client = ChatClientFactory.Create(settings);
                 var engine = await SenseiEngine.CreateAsync(new SenseiEngineOptions
                 {
-                    ChatClient = client, Speech = new LogSpeechOutput(), Events = new LogEngineEvents(),
+                    ChatClient = client, Speech = new LogSpeechOutput(debugText, secret), Events = new LogEngineEvents(debugText, secret),
                     ProfileStore = store, ProfileId = "smoke", KnownSecrets = secret == null ? Array.Empty<string>() : new[] { secret }
                 }, lifetime.Token);
                 try
