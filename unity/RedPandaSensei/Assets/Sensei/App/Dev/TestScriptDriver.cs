@@ -47,7 +47,7 @@ namespace Sensei.App
                             case "event": var turn = host.EventTurn(args[0]); ok = !turn.IsCompleted || await turn; break;
                             case "select": ok = await host.TestSelect(args[0]); break;
                             case "move": ok = await host.TestMove(args[0], args[1]); break;
-                            case "interrupt_after_ms": ok = await Until(() => host.SpeechPlaying, 90); if (ok) { await Task.Delay(int.Parse(args[0])); ok = host.SpeechPlaying && await Wav(args[1]); } break;
+                            case "interrupt_after_ms": ok = await Until(() => host.SpeechActive, 90); if (ok) { await Task.Delay(int.Parse(args[0])); ok = host.SpeechActive && await Wav(args[1]); } break;
                             case "sleep": await Task.Delay(TimeSpan.FromSeconds(double.Parse(args[0], CultureInfo.InvariantCulture))); ok = true; break;
                             case "log": Debug.Log("RPS_E2E marker=" + args[0]); ok = true; break;
                             default: ok = false; break;
