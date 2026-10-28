@@ -14,6 +14,7 @@ namespace Sensei.App
         private Transform head = null!;
         private Transform hand = null!;
         private GameObject mat = null!;
+        private bool frameSenseiForTest;
         public void Initialize(Transform headTransform, Transform handTransform)
         {
             head = headTransform; hand = handTransform;
@@ -31,12 +32,15 @@ namespace Sensei.App
                 var box = zone.AddComponent<BoxCollider>(); box.isTrigger = true; box.size = new Vector3(0.45f, 0.30f, 0.5f);
             }
         }
+        public void SetTestFrame(bool enabled) => frameSenseiForTest = enabled;
         public void Place()
         {
             var forward = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
             if (forward.sqrMagnitude < 0.001f) forward = Vector3.forward;
-            transform.position = new Vector3(head.position.x, 0, head.position.z) + forward * 0.9f;
             transform.rotation = Quaternion.LookRotation(forward, Vector3.up);
+            // RULING(orchestrator 2026-10-28): frame Sensei and captions for unattended Quest capture only.
+            if (frameSenseiForTest) transform.position = head.position + head.forward * 1.2f - transform.rotation * new Vector3(-0.78f, 0.93f, 0f);
+            else transform.position = new Vector3(head.position.x, 0, head.position.z) + forward * 0.9f;
         }
         public void Render(SceneSnapshot scene)
         {
