@@ -10,6 +10,7 @@ namespace Sensei.App
     public sealed class PracticeAreaView : MonoBehaviour
     {
         private readonly Dictionary<string, ObjectCardView> cards = new Dictionary<string, ObjectCardView>();
+        private long lastRevision = long.MinValue;
         private Transform head = null!;
         private Transform hand = null!;
         private GameObject mat = null!;
@@ -39,6 +40,8 @@ namespace Sensei.App
         }
         public void Render(SceneSnapshot scene)
         {
+            if (scene.Revision < lastRevision) return;
+            lastRevision = scene.Revision;
             var placements = PracticeLayout.Compute(scene);
             var alive = new HashSet<string>(placements.Select(p => p.InstanceId));
             foreach (var id in cards.Keys.ToArray()) if (!alive.Contains(id)) { cards[id].Remove(); cards.Remove(id); }
@@ -51,7 +54,7 @@ namespace Sensei.App
                 }
                 var parent = p.Region == "learner_hand" ? hand : transform;
                 var position = p.Region == "learner_hand" ? new Vector3(0, 0.02f, 0.08f) + p.LocalPosition : p.LocalPosition;
-                card.SetTarget(parent, position, p.Scale, scene.SelectedId == p.InstanceId);
+                card.SetTarget(parent, position, p.Scale, scene.SelectedId == p.InstanceId, p.Region, p.ContainerId);
             }
         }
         public void Highlight(IEnumerable<string> ids, int durationMs) { foreach (var id in ids) if (cards.TryGetValue(id, out var card)) card.Highlight(durationMs); }

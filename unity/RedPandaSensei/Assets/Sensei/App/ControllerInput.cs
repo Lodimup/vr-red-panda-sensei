@@ -43,10 +43,14 @@ namespace Sensei.App
                 if (candidate != null && candidate != card && (candidate.CatalogId == "bag" || candidate.CatalogId == "box")) { destination = candidate; break; }
             }
             var region = destination == null ? PracticeLayout.RegionAt(area.transform.InverseTransformPoint(hand.position)) : null;
-            if (destination == null && region == null) return;
+            if (destination == null && region == null) { card.SnapBack(); return; }
+            card.ExpectDestination(region, destination != null ? destination.InstanceId : null);
+            var version = card.PendingVersion;
             host.Move(card.InstanceId, region, destination != null ? destination.InstanceId : null, ok =>
             {
-                if (!ok) { var device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand); device.SendHapticImpulse(0, 0.5f, 0.1f); }
+                if (card == null) return;
+                var active = card.CompleteMove(version, ok);
+                if (!ok && active) { var device = InputDevices.GetDeviceAtXRNode(XRNode.RightHand); device.SendHapticImpulse(0, 0.5f, 0.1f); }
             });
         }
         private void OnDestroy() { foreach (var a in new[] { trigger, grip, repeat, hint, replace, pace }) a?.Dispose(); }
