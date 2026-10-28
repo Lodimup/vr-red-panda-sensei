@@ -43,6 +43,7 @@ namespace Sensei.App
                         {
                             case "wait_idle": ok = await Until(() => host.TestIdle, args.Length == 0 ? 90 : double.Parse(args[0], CultureInfo.InvariantCulture)); break;
                             case "wav": ok = await Wav(args[0]); break;
+                            case "repeat": ok = await host.Repeat(); break;
                             case "event": var turn = host.EventTurn(args[0]); ok = !turn.IsCompleted || await turn; break;
                             case "select": ok = await host.TestSelect(args[0]); break;
                             case "move": ok = await host.TestMove(args[0], args[1]); break;

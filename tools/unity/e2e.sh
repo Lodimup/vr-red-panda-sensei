@@ -15,7 +15,7 @@ if [[ $scenario == prepare ]]; then
   make_wav() { local name=$1 voice=$2 words=$3; local aiff; aiff=$(mktemp "$HOME/scratchpad/rps-XXXXXX.aiff"); say -v "$voice" -o "$aiff" "$words"; afconvert -f WAVE -d LEI16@16000 -c 1 "$aiff" "$dest/$name.wav"; rm -f "$aiff"; }
   case $scenario in
     a01) make_wav novice Samantha "I don't know any Japanese at all."; make_wav red Samantha 'What is that red one?'; make_wav request Kyoko 'りんごをください'; make_wav thanks Kyoko 'ありがとう';;
-    a10) make_wav interrupt Samantha 'Please show me an apple.';;
+    a10) make_wav water Samantha 'Can you teach me how to say water?'; make_wav interrupt Samantha 'Wait, say it again please.';;
   esac
   exit 0
 fi

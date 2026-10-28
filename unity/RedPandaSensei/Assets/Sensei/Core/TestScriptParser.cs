@@ -23,7 +23,7 @@ namespace Sensei.App.Core
                 var line = raw.Trim(); if (line.Length == 0 || line.StartsWith("#")) continue;
                 var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
                 var verb = parts[0]; int n = parts.Length - 1;
-                bool valid = verb switch { "wait_idle" => n <= 1, "wav" or "event" or "select" or "sleep" or "log" => n == 1, "move" or "interrupt_after_ms" => n == 2, _ => false };
+                bool valid = verb switch { "wait_idle" => n <= 1, "repeat" => n == 0, "wav" or "event" or "select" or "sleep" or "log" => n == 1, "move" or "interrupt_after_ms" => n == 2, _ => false };
                 if (!valid) throw new FormatException("Invalid step: " + verb);
                 var args = new string[n]; Array.Copy(parts, 1, args, 0, n);
                 if ((verb == "sleep" || verb == "wait_idle") && n > 0 && (!double.TryParse(args[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) || double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds <= 0)) throw new FormatException("Invalid duration");

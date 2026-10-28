@@ -125,6 +125,21 @@ namespace Sensei.App
             catch (Exception error) { Debug.LogError("RPS_TURN failed type=" + error.GetType().Name); return false; }
             finally { if (token == turnToken) turnBusy = false; Interlocked.Decrement(ref turnCount); }
         }
+        public async Task<bool> Repeat()
+        {
+            var current = engine; if (!ready || current == null) return false;
+            var token = ++turnToken; turnBusy = true; Interlocked.Increment(ref turnCount);
+            try
+            {
+                var result = await Task.Run(() => current.ReplayLastSpeechAsync(ct: lifetime.Token));
+                if (result.ErrorCode == "nothing_to_replay") { captions?.ShowRepeatEmpty(); Debug.Log("RPS_REPEAT nothing"); return true; }
+                if (result.IsSuccess) { Debug.Log("RPS_REPEAT ok"); return true; }
+                Debug.LogError("RPS_REPEAT failed " + result.ErrorCode); return false;
+            }
+            catch (OperationCanceledException) { return false; }
+            catch (Exception e) { Debug.LogError("RPS_REPEAT failed type=" + e.GetType().Name); return false; }
+            finally { if (token == turnToken) turnBusy = false; Interlocked.Decrement(ref turnCount); }
+        }
         private void FinishTurn(string status, string? code)
         {
             queue.Post(() => { finishedTurns++; if (hintShownAt >= 0 && finishedTurns > hintShownAt + 1) { hintCard.Clear(); hintShownAt = -1; } }); ModelStatus = code switch { "llm_not_configured" => "no key", "auth_failed" => "auth failed", "quota_exceeded" => "quota", "network_error" => "network", _ => hasKey ? "ready" : "no key" };
