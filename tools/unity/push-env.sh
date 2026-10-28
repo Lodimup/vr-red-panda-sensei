@@ -15,7 +15,7 @@ fi
 serial=${QUEST_SERIAL:-${ANDROID_SERIAL:-}}
 adb_device=(adb)
 if [[ -n "$serial" ]]; then adb_device+=(-s "$serial"); fi
-# Key source, first match: SENSEI_LLM_API_KEY in the environment; a prompt when no KEYS.toml exists and stdin is a terminal; else KEYS.toml.
+# Key source, first match: SENSEI_LLM_API_KEY, a hidden terminal prompt, or a local keys file for non-interactive use.
 if [[ -n ${SENSEI_LLM_API_KEY:-} ]]; then
 api_key=$SENSEI_LLM_API_KEY
 elif [[ -t 0 ]]; then
