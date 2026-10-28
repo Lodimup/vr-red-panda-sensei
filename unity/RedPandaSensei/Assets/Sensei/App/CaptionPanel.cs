@@ -18,9 +18,9 @@ namespace Sensei.App
             text = gameObject.AddComponent<TextMeshPro>();
             text.font = Resources.Load<TMP_FontAsset>("Fonts/NotoSansJP");
             text.fontSize = 0.45f; text.richText = false; text.alignment = TextAlignmentOptions.Center; text.color = Color.white;
-            text.rectTransform.sizeDelta = new Vector2(0.6f, 0.24f);
+            text.rectTransform.sizeDelta = PanelLayout.Caption.Size;
             text.textWrappingMode = TextWrappingModes.Normal;
-            transform.localPosition = new Vector3(-0.70f, 0.72f, -0.25f);
+            transform.localPosition = PanelLayout.Caption.Centre;
         }
         public void Show(SpeechSegment segment, SpeechCaptions visibility)
         {

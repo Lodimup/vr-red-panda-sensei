@@ -6,21 +6,18 @@ using System.Threading;
 using Sensei.Engine;
 using Sensei.Engine.Llm;
 using Sensei.Engine.Storage;
-using TMPro;
 using UnityEngine;
 
 namespace Sensei.Unity
 {
     public sealed class SmokeBootstrap : MonoBehaviour
     {
-        [SerializeField] private TMP_Text label = null!;
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private string? secret;
 
         private void Report(string message)
         {
             Debug.Log(message);
-            if (label != null) label.text = message;
         }
 
         private async void Start()
