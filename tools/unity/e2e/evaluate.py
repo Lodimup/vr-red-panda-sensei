@@ -24,7 +24,9 @@ else:
     checks.update(existing_profile=bool(sessions and int(sessions.group(1)) >= 2), greeting_spoken=bool(texts),
                   no_onboarding_question=not any(re.search(r'(?:what|how much|any|知っ|日本語).*(?:japanese|日本語|know|勉強)', t, re.I) and ('?' in t or '？' in t) for t in texts),
                   returning_greeting=any(re.search(r'\b(back|again|continue|return|welcome back|previous|review)\b|おかえり|前回|続き|復習', t, re.I) for t in texts))
-summary = {'scenario': scenario, 'pass': all(checks.values()), 'checks': checks, 'completed_turns': sum(s == 'completed' for s, _ in turns)}
+capture = json.loads((out / 'capture.json').read_text())
+checks['video_recorded'] = (out / 'clip.mp4').stat().st_size > 0
+summary = {'capture': f"frame capture, ~{capture['fps']:.1f} fps", 'scenario': scenario, 'pass': all(checks.values()), 'checks': checks, 'completed_turns': sum(s == 'completed' for s, _ in turns)}
 (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
 print(json.dumps(summary, indent=2))
 sys.exit(0 if summary['pass'] else 1)
