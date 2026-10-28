@@ -219,12 +219,16 @@ internal sealed class EngineCore
     /// S23, S92, S117: starts a turn — new turn id, new generation, the transcript recorded as a learner utterance
     /// (synthetic for <c>(cli)</c>), round 1 with the round base at the last scene event, budgets reset.
     /// </summary>
-    public TurnState BeginTurnCore(string transcript, bool synthetic, string? correctedFrom = null)
+    public TurnState BeginTurnCore(string transcript, bool synthetic, string? correctedFrom = null) =>
+        BeginTurnCoreIfCurrent(transcript, synthetic, correctedFrom, null)!;
+
+    internal TurnState? BeginTurnCoreIfCurrent(string transcript, bool synthetic, string? correctedFrom, long? expectedGeneration)
     {
         CancellationTokenSource previousCts;
         TurnState turn;
         lock (Sync)
         {
+            if (expectedGeneration.HasValue && _generation != expectedGeneration.Value) return null;
             _generation++;
             previousCts = _generationCts;
             _generationCts = new CancellationTokenSource();
