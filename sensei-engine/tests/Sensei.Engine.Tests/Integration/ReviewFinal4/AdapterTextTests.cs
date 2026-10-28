@@ -50,6 +50,14 @@ public sealed class AdapterTextTests
     private static string ToolMessage(FakeRequest request) => request.Json.GetProperty("messages").EnumerateArray()
         .Single(m => m.GetProperty("role").GetString() == "tool").GetRawText();
 
+    private static string NormalizeMessage(string message)
+    {
+        using var outer = JsonDocument.Parse(message);
+        var content = outer.RootElement.GetProperty("content").GetString()!;
+        try { using var inner = JsonDocument.Parse(content, new JsonDocumentOptions { MaxDepth = 20_001 }); return JsonSerializer.Serialize(inner.RootElement); }
+        catch (JsonException) { return content; }
+    }
+
     private static string ToolContent(FakeRequest request) => request.Json.GetProperty("messages").EnumerateArray()
         .Single(m => m.GetProperty("role").GetString() == "tool").GetProperty("content").GetString()!;
 
@@ -117,7 +125,7 @@ public sealed class AdapterTextTests
         using var _ = server;
 
         Assert.Equal(TurnStatuses.Completed, turn.Status);
-        Assert.Equal(before, ToolMessage(Assert.Single(server.Requests)));
+        Assert.Equal(NormalizeMessage(before!), NormalizeMessage(ToolMessage(Assert.Single(server.Requests))));
     }
 
     [Fact]
@@ -127,8 +135,7 @@ public sealed class AdapterTextTests
         using var _ = server;
 
         Assert.Equal(TurnStatuses.Completed, turn.Status);
-        Assert.Equal("{" + Environment.NewLine + "  \"a\": 1," + Environment.NewLine + "  \"b\": [" + Environment.NewLine + "    2" + Environment.NewLine + "  ]"
-            + Environment.NewLine + "}", ToolContent(Assert.Single(server.Requests)));
+        Assert.Equal("{\"a\":1,\"b\":[2]}", ToolContent(Assert.Single(server.Requests)));
     }
 
     [Theory]
@@ -149,7 +156,7 @@ public sealed class AdapterTextTests
 
         Assert.Equal(TurnStatuses.Completed, turn.Status);
         var request = Assert.Single(server.Requests);
-        if (before is not null) Assert.Equal(before, ToolMessage(request));
+        if (before is not null) Assert.Equal(NormalizeMessage(before), NormalizeMessage(ToolMessage(request)));
         else Assert.Equal(raw, ToolContent(request));
     }
 
@@ -239,8 +246,8 @@ public sealed class AdapterTextTests
         Assert.IsType<List<object?>>(asIs[1]);
 
         var asText = Results(true);
-        Assert.Equal("{" + Environment.NewLine + "  \"k\": 1" + Environment.NewLine + "}", asText[0]);
-        Assert.Equal("[" + Environment.NewLine + "  1," + Environment.NewLine + "  \"two\"" + Environment.NewLine + "]", asText[1]);
+        Assert.Equal("{\"k\":1}", asText[0]);
+        Assert.Equal("[1,\"two\"]", asText[1]);
         Assert.Equal("plain", asText[2]);
         Assert.Null(asText[3]);
         Assert.Equal(7, asText[4]);

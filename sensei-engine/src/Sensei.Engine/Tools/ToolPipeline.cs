@@ -38,14 +38,14 @@ internal sealed class ToolPipeline
     /// Invokes <paramref name="toolName"/> as Sensei. <paramref name="generationId"/> is the generation the caller works for
     /// (the agent loop passes its turn's); null means the current turn's generation.
     /// </summary>
-    public async Task<ToolResult> InvokeAsync(string toolName, string? argumentsJson, string? callId, long? generationId, CancellationToken ct)
+    public async Task<ToolResult> InvokeAsync(string toolName, string? argumentsJson, string? callId, long? generationId, CancellationToken ct, bool unavailable = false)
     {
         using var scope = _core.OpenNotificationScope();
         var stopwatch = Stopwatch.StartNew();
         Call call;
         lock (_core.Sync)
         {
-            call = Precheck(toolName ?? "", argumentsJson, callId, generationId, stopwatch);
+            call = Precheck(toolName ?? "", argumentsJson, callId, generationId, stopwatch, unavailable);
         }
 
         // S24: the same call id while the first call is still running waits for it and returns its result.
@@ -173,7 +173,7 @@ internal sealed class ToolPipeline
         _inFlight.Clear();
     }
 
-    private Call Precheck(string toolName, string? argumentsJson, string? callId, long? generationId, Stopwatch stopwatch)
+    private Call Precheck(string toolName, string? argumentsJson, string? callId, long? generationId, Stopwatch stopwatch, bool unavailable)
     {
         var turn = _core.CurrentTurn;
         var current = _core.CurrentGeneration;
@@ -242,7 +242,7 @@ internal sealed class ToolPipeline
 
         // 5. unknown tool
         var tool = _core.Tools.Find(toolName);
-        if (tool is null)
+        if (tool is null || unavailable)
             return Done(call, Fail(ToolErrorCodes.UnknownTool, $"unknown tool '{toolName}'"), stopwatch, cacheThis, countFailure: true);
         call.Tool = tool;
 

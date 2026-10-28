@@ -30,7 +30,7 @@ public sealed class SetSupportTool : SenseiTool<SetSupportArgs>
 {
     public override string Name => "set_support";
 
-    public override string Description => "Change the learner's support settings (captions, pace, corrections, language mode), starting band or difficulty, because the learner asked or to adapt; fields the learner pinned cannot be changed.";
+    public override string Description => "Change unpinned learner support or difficulty.";
 
     protected override string SchemaJson => """
         {

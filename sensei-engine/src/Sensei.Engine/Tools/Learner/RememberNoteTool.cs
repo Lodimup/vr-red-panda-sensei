@@ -19,7 +19,7 @@ public sealed class RememberNoteTool : SenseiTool<RememberNoteArgs>
 {
     public override string Name => "remember_note";
 
-    public override string Description => "Remember a short note about the learner (an interest, a goal, a preference) for later sessions; never store secrets.";
+    public override string Description => "Save a learner note; never store secrets.";
 
     protected override string SchemaJson => """
         {

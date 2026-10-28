@@ -31,8 +31,8 @@ public sealed class LlmSettings
 
     public const string DefaultModel = "meta/muse-spark-1.3-contributor";
 
-    /// <summary>S125: default reasoning effort. The model's default effort costs about 10 s per request; <c>low</c> about half of that.</summary>
-    public const string DefaultReasoningEffort = "low";
+    /// <summary>Lowest effort the default model accepts; none is rejected by the provider (HTTP 400, reasoning mandatory).</summary>
+    public const string DefaultReasoningEffort = "minimal";
 
     /// <summary>S125: default bound on the tokens of one response.</summary>
     public const int DefaultMaxOutputTokens = 2000;
@@ -41,7 +41,7 @@ public sealed class LlmSettings
     public static IReadOnlyList<string> Providers { get; } = new[] { OpenRouter, Meta, OpenAiCompatible };
 
     /// <summary>S125: allowed reasoning effort values, lowest first.</summary>
-    public static IReadOnlyList<string> ReasoningEfforts { get; } = new[] { "none", "low", "medium", "high" };
+    public static IReadOnlyList<string> ReasoningEfforts { get; } = new[] { "none", "minimal", "low", "medium", "high" };
 
     /// <summary>The S6 four-argument form, kept so callers built against it still bind; S125 values take their defaults.</summary>
     public LlmSettings(string provider, string apiKey, string? model, string? baseUrl)
@@ -57,7 +57,7 @@ public sealed class LlmSettings
     /// <param name="apiKey">Bearer key.</param>
     /// <param name="model">Model id; the SPEC default when null or empty.</param>
     /// <param name="baseUrl">Override base URL; required for <c>openai_compatible</c>.</param>
-    /// <param name="reasoningEffort">S125: <c>none</c>, <c>low</c>, <c>medium</c> or <c>high</c>; <c>low</c> when null or empty.</param>
+    /// <param name="reasoningEffort">S125: <c>none</c>, <c>minimal</c>, <c>low</c>, <c>medium</c> or <c>high</c>; <c>minimal</c> when null or empty.</param>
     /// <param name="maxOutputTokens">S125: bound on each response; 2000 when null. Must be positive.</param>
     public LlmSettings(string provider, string apiKey, string? model = null, string? baseUrl = null, string? reasoningEffort = null, int? maxOutputTokens = null)
     {

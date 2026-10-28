@@ -15,7 +15,7 @@ public sealed class InspectSceneTool : SenseiTool<InspectSceneArgs>
 {
     public override string Name => "inspect_scene";
 
-    public override string Description => "Look at the practice area: every object with its id, place and Japanese name, the selected object, the active task and the learner's support settings.";
+    public override string Description => "Inspect scene objects and active task.";
 
     protected override string SchemaJson => """
         {

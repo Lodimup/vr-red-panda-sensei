@@ -26,7 +26,7 @@ public sealed class StartChallengeTool : SenseiTool<StartChallengeArgs>
 {
     public override string Name => "start_challenge";
 
-    public override string Description => "Start a practice task: an instruction, the skills it trains and the scene conditions that complete it.";
+    public override string Description => "Start a task with skills and completion conditions.";
 
     public override bool IsMutating => true;
 

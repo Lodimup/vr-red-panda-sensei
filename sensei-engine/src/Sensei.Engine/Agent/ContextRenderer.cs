@@ -35,7 +35,10 @@ internal sealed class ContextRenderer
     }
 
     /// <summary>The full instruction text for one model request: the system prompt plus the current engine-owned state.</summary>
-    public string RenderInstructions(TurnScope scope) => SystemPrompt.Text + "\n\n" + RenderState(scope);
+    public string RenderInstructions(TurnScope scope)
+    {
+        lock (_core.Sync) return SystemPrompt.ForLevel(_core.Learner.Profile.WorkingLevel) + "\n\n" + RenderState(scope);
+    }
 
     /// <summary>S63: the engine-owned state — band, working level, support, pins, counts, scene, budgets. No text a model or learner wrote.</summary>
     public string RenderState(TurnScope scope)
@@ -82,6 +85,7 @@ internal sealed class ContextRenderer
         sb.AppendLine("## Current state (engine-owned, refreshed before every model request)");
         if (scope.Request.EventKind is { } kind) sb.AppendLine($"- player event this turn: {kind}. {EventMeaning(kind)}");
         sb.AppendLine($"- learner history: {learnerHistory}");
+        sb.AppendLine("- absent pins, recommendations and review mean none");
         sb.AppendLine($"- tool calls remaining this turn: {callsLeft.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine($"- model rounds remaining after this request: {roundsLeft.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine(round == 1 && scope.Request.EventKind is not null
@@ -94,9 +98,9 @@ internal sealed class ContextRenderer
         sb.AppendLine($"- working level (JLPT, hidden from the learner — never state it): {workingLevel}");
         if (selfReported is not null) sb.AppendLine($"- the learner reported their own level as: {selfReported}");
         sb.AppendLine($"- support settings: language mode: {languageMode}, {supportLine}");
-        sb.AppendLine($"- pinned by the learner (never change): {pinned}");
-        sb.AppendLine($"- recommendations: {recommendationCount.ToString(CultureInfo.InvariantCulture)} (the targets are in the {SystemPrompt.LearnerDataTag} block)");
-        sb.AppendLine($"- review due: {reviewDueCount.ToString(CultureInfo.InvariantCulture)} (the targets are in the {SystemPrompt.LearnerDataTag} block)");
+        if (pinned != "none") sb.AppendLine($"- pinned by the learner (never change): {pinned}");
+        if (recommendationCount != 0) sb.AppendLine($"- recommendations: {recommendationCount.ToString(CultureInfo.InvariantCulture)}");
+        if (reviewDueCount != 0) sb.AppendLine($"- review due: {reviewDueCount.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine($"- active task: {activeTask}");
         sb.AppendLine($"- scene snapshot (revision, selected object, instances): {snapshotJson}");
         return sb.ToString().TrimEnd();
@@ -208,12 +212,15 @@ internal sealed class ContextRenderer
     {
         var node = JsonSerializer.SerializeToNode(snapshot, SenseiJsonContext.Default.SceneSnapshot)!.AsObject();
         node.Remove("support");
+        foreach (var key in node.Where(x => x.Value is null).Select(x => x.Key).ToArray()) node.Remove(key);
         if (node["instances"] is JsonArray instances)
             foreach (var instance in instances.OfType<JsonObject>())
             {
                 instance.Remove("japanese");
                 instance.Remove("reading");
                 instance.Remove("english");
+                instance.Remove("slot");
+                foreach (var key in instance.Where(x => x.Value is null).Select(x => x.Key).ToArray()) instance.Remove(key);
             }
         return node.ToJsonString(NodeMaxDepthOptions);
     }

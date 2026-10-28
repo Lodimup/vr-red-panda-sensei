@@ -2,13 +2,15 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Sensei.Engine.Llm;
+using Sensei.Engine.Tools;
+using Sensei.Engine.Tasks;
 using Sensei.Engine.Tests.TestKit;
 using Xunit.Abstractions;
 
 namespace Sensei.Engine.Tests.Agent;
 
 /// <summary>
-/// Input-size guard for the agent request (s5). Every request carries the system prompt, the 16 tool schemas, the
+/// Input-size guard for the agent request (s5). Every request carries the system prompt, the state-gated tool schemas, the
 /// current state and the conversation so far, and each input token costs time and money on every model round. This
 /// measures what really goes on the wire through the real OpenAI client against the loopback server, with no provider.
 /// </summary>
@@ -17,13 +19,13 @@ public sealed class PromptBudgetTests
     private const string Key = "budget-key-0123456789";
 
     /// <summary>
-    /// Provider-reported input tokens per UTF-8 byte of the wire body: the first request of a fresh engine was 38574 bytes
-    /// and 8054 provider tokens at commit 209a5a5 (live, 2026-10-28). Mixed JSON and prose, so an estimate, not a tokenizer.
+    /// Provider-reported input tokens per UTF-8 byte: the first lean request used 5193 provider tokens and 18090 wire bytes
+    /// on 2026-10-28. Add 5% headroom; this is an estimate, not a tokenizer.
     /// </summary>
-    public const double TokensPerByte = 8054.0 / 38574.0;
+    public const double TokensPerByte = 5193.0 / 18090.0 * 1.05;
 
     /// <summary>The input budget per request, in estimated tokens (the orchestrator's s5 target).</summary>
-    public const int BudgetTokens = 8000;
+    public const int BudgetTokens = 7000;
 
     private readonly ITestOutputHelper _output;
 
@@ -57,8 +59,8 @@ public sealed class PromptBudgetTests
         var b = await FirstRequestAsync("Hello! I'm a complete beginner. Can you show me something to drink?");
         _output.WriteLine($"first request: {b.Total} bytes (~{Tokens(b.Total):F0} tokens): system+state {b.System}, tools {b.Tools}, learner block {b.User}");
         _output.WriteLine("state:\n" + b.State);
-        // Room for the history of a few turns and the results of up to 3 more rounds inside the budget.
-        Assert.True(Tokens(b.Total) <= BudgetTokens * 0.8, $"first request ~{Tokens(b.Total):F0} tokens, over {BudgetTokens * 0.8:F0}");
+        // Fresh-request budget with provider-calibrated headroom.
+        Assert.True(Tokens(b.Total) <= 4900, $"first request ~{Tokens(b.Total):F0} tokens, over 4900");
     }
 
     [Fact]
@@ -71,7 +73,7 @@ public sealed class PromptBudgetTests
 
         var body = server.Requests[0].Json;
         var tools = body.GetProperty("tools").EnumerateArray().ToList();
-        Assert.Equal(t.Engine.ToolNames.ToArray(), tools.Select(x => x.GetProperty("function").GetProperty("name").GetString()!).ToArray());
+        Assert.Equal(t.Engine.ToolNames.Where(n => n != "update_challenge").ToArray(), tools.Select(x => x.GetProperty("function").GetProperty("name").GetString()!).ToArray());
         Assert.Equal("auto", body.GetProperty("tool_choice").GetString());
         Assert.True(body.GetProperty("parallel_tool_calls").GetBoolean()); // the loop is built for several calls in one response
         foreach (var tool in tools)
@@ -92,27 +94,65 @@ public sealed class PromptBudgetTests
 
         var onWire = server.Requests[0].Json.GetProperty("tools").EnumerateArray()
             .ToDictionary(x => x.GetProperty("function").GetProperty("name").GetString()!, x => x.GetProperty("function"));
+        using var activeServer = new FakeChatServer().EnqueueText("ok");
+        var activeClient = ChatClientFactory.Create(new LlmSettings("openrouter", Key, null, activeServer.BaseUrl));
+        await using var active = await TestEngine.CreateAsync(chatClient: activeClient, knownSecrets: new[] { Key });
+        lock (active.Core.Sync)
+            active.Core.Tasks.CommitStart(TaskFamilies.ListenArrange, new TaskInstruction { English = "Arrange the apple." },
+                new[] { new SkillTarget { Dimension = "listening", Key = "apple" } },
+                new[] { new TaskPredicate { Type = "in_region", ObjectId = "apple_1", Region = "left" } },
+                Array.Empty<ScenarioProperty>(), null, false, active.Core.CurrentTurnId);
+        await active.Engine.RunTurnAsync("hi");
+        var update = activeServer.Requests[0].Json.GetProperty("tools").EnumerateArray().Single(x => x.GetProperty("function").GetProperty("name").GetString() == "update_challenge");
+        onWire.Add("update_challenge", update.GetProperty("function"));
         foreach (var tool in t.Core.Tools.Standard)
         {
             var sent = onWire[tool.Name];
             Assert.Equal(tool.Description, sent.GetProperty("description").GetString());
-            Assert.True(JsonEquals(tool.JsonSchema, sent.GetProperty("parameters")), $"{tool.Name}: the schema on the wire differs from the engine's schema");
+            Assert.True(JsonEquals(tool.JsonSchema, sent.GetProperty("parameters"), tool.Name), $"{tool.Name}: the schema on the wire differs from the engine's schema");
         }
     }
 
-    private static bool JsonEquals(JsonElement a, JsonElement b)
+    [Fact]
+    public async Task Stripped_constraints_still_fail_with_invalid_arguments()
+    {
+        await using var t = await TestEngine.CreateAsync();
+        var cases = new (string Tool, string Args)[]
+        {
+            ("remember_note", JsonSerializer.Serialize(new { key = "a", value = new string('x', 121) })), // maxLength
+            ("remember_note", "{\"key\":\"a\",\"value\":\"\"}"), // minLength
+            ("remember_note", "{\"key\":\"BAD\",\"value\":\"x\"}"), // pattern
+            ("remember_note", "{\"key\":\"a\",\"value\":\"x\",\"extra\":1}"), // additionalProperties
+            ("highlight_objects", "{\"object_ids\":[]}"), // minItems
+            ("highlight_objects", "{\"object_ids\":[\"a\",\"b\",\"c\",\"d\",\"e\"]}"), // maxItems
+            ("highlight_objects", "{\"object_ids\":[\"a\"],\"duration_ms\":499}"), // minimum
+            ("highlight_objects", "{\"object_ids\":[\"a\"],\"duration_ms\":8001}"), // maximum
+        };
+        foreach (var (tool, args) in cases)
+        {
+            t.Engine.BeginTurn("test");
+            Assert.Equal(ToolErrorCodes.InvalidArguments, (await t.CallAsync(tool, args)).ErrorCode);
+        }
+    }
+
+    private static bool JsonEquals(JsonElement a, JsonElement b, string tool, string path = "")
     {
         if (a.ValueKind != b.ValueKind) return false;
         switch (a.ValueKind)
         {
             case JsonValueKind.Object:
-                var left = a.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
+                var stripped = new HashSet<string> { "maxLength", "minLength", "minItems", "maxItems", "pattern", "additionalProperties", "minimum", "maximum" };
+                var predicatePaths = new[] { "type", "object_id", "selector", "region", "container_id", "count", "comparison", "reference_id" }
+                    .Select(n => "/properties/predicates/items/properties/" + n);
+                var keepDescription = tool == "speak" && path == "/properties/segments"
+                    || tool == "start_challenge" && (path is "/properties/predicates" or "/properties/predicates/items" || predicatePaths.Contains(path));
+                var left = a.EnumerateObject().Where(p => !stripped.Contains(p.Name) && (p.Name != "description" || keepDescription)).ToDictionary(p => p.Name, p => p.Value);
                 var right = b.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
-                return left.Count == right.Count && left.All(kv => right.TryGetValue(kv.Key, out var other) && JsonEquals(kv.Value, other));
+                return left.Count == right.Count && left.All(kv => right.TryGetValue(kv.Key, out var other) && JsonEquals(kv.Value, other, tool, path + "/" + kv.Key));
             case JsonValueKind.Array:
                 var l = a.EnumerateArray().ToList();
                 var r = b.EnumerateArray().ToList();
-                return l.Count == r.Count && l.Zip(r, JsonEquals).All(x => x);
+                return l.Count == r.Count && l.Zip(r, (leftItem, rightItem) => JsonEquals(leftItem, rightItem, tool, path)).All(x => x);
             case JsonValueKind.String:
                 return a.GetString() == b.GetString(); // the writer may escape an apostrophe the checked-in text does not
             default:

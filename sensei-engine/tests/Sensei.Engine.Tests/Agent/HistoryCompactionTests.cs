@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Sensei.Engine.Agent;
+using Sensei.Engine.Llm;
 using Sensei.Engine.Tests.TestKit;
 using static Sensei.Engine.Tests.Agent.AgentTestSupport;
 
@@ -9,6 +10,24 @@ namespace Sensei.Engine.Tests.Agent;
 /// <summary>s5: what earlier turns leave in the history is kept small; the calls, the learner and the pairing stay (S65, S85).</summary>
 public sealed class HistoryCompactionTests
 {
+    [Fact]
+    public async Task Finished_speech_is_compacted_on_the_wire()
+    {
+        using var server = new FakeChatServer()
+            .EnqueueToolCalls(("c1", "speak", "{\"segments\":[{\"lang\":\"ja\",\"text\":\"みず\",\"romaji\":\"mizu\",\"translation\":\"water\"}]}"))
+            .EnqueueText("done").EnqueueText("done");
+        using var client = ChatClientFactory.Create(new LlmSettings("openrouter", "example-key", null, server.BaseUrl));
+        await using var t = await TestEngine.CreateAsync(chatClient: client);
+        await t.Engine.RunTurnAsync("first");
+        await t.Engine.RunTurnAsync("second");
+        var messages = server.Requests.Last().Json.GetProperty("messages").EnumerateArray();
+        var call = messages.Single(m => m.TryGetProperty("tool_calls", out _)).GetProperty("tool_calls")[0].GetProperty("function");
+        var args = call.GetProperty("arguments").GetString()!;
+        Assert.DoesNotContain("\n", args);
+        Assert.DoesNotContain("romaji", args);
+        Assert.DoesNotContain("translation", args);
+        Assert.Contains("みず", args);
+    }
     private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement.Clone();
 
     private const string FullResult =
@@ -25,6 +44,30 @@ public sealed class HistoryCompactionTests
         new ChatMessage(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("c1", Json(result)) }),
         new ChatMessage(ChatRole.Assistant, "done"),
     };
+
+    [Theory]
+    [InlineData("speak", "{\"segments\":[{\"lang\":\"ja\",\"text\":\"水\",\"reading\":\"みず\",\"romaji\":\"mizu\",\"translation\":\"water\"}]}", "{\"segments\":[{\"lang\":\"ja\",\"text\":\"水\"}]}")]
+    [InlineData("show_hint", "{\"content\":{\"japanese\":\"水\",\"english\":\"water\",\"reading\":\"みず\"},\"kind\":\"model_answer\"}", "{\"content\":{\"japanese\":\"水\",\"english\":\"water\"}}")]
+    [InlineData("start_challenge", "{\"family\":\"discover_request\",\"instruction\":{\"english\":\"ask\"},\"skill_targets\":[{\"key\":\"water\",\"dimension\":\"vocabulary\"}],\"predicates\":[]}", "{\"family\":\"discover_request\",\"instruction\":{\"english\":\"ask\"},\"skill_targets\":[{\"key\":\"water\"}]}")]
+    [InlineData("record_attempt", "{\"target\":{\"key\":\"water\",\"dimension\":\"production\"},\"transcript_excerpt\":\"mizu\",\"communicative_success\":true,\"language_assessment\":\"correct\"}", "{\"target\":{\"key\":\"water\"},\"communicative_success\":true,\"language_assessment\":\"correct\"}")]
+    [InlineData("move_object", "{\"object_id\":\"water_1\",\"destination\":{\"region\":\"left\"},\"purpose\":\"arrange\"}", "{\"object_id\":\"water_1\",\"destination\":{\"region\":\"left\"}}")]
+    [InlineData("set_support", "{\"reason\":\"learner_request\",\"show_romaji\":true}", "{\"show_romaji\":true}")]
+    [InlineData("update_challenge", "{\"action\":\"abandon\",\"reason\":\"done\",\"task_id\":\"t1\"}", "{\"action\":\"abandon\"}")]
+    [InlineData("spawn_objects", "{\"objects\":[{\"catalog_id\":\"water\",\"region\":\"center\",\"quantity\":2}]}", "{\"objects\":[{\"catalog_id\":\"water\",\"region\":\"center\"}]}")]
+    [InlineData("remove_objects", "{\"object_ids\":[\"water_1\"],\"other\":1}", "{\"object_ids\":[\"water_1\"]}")]
+    [InlineData("highlight_objects", "{\"object_ids\":[\"water_1\"],\"duration_ms\":1000}", "{\"object_ids\":[\"water_1\"]}")]
+    [InlineData("inspect_scene", "{\"anything\":1}", "{}")]
+    public void Finished_call_arguments_keep_only_relevant_fields(string name, string input, string expected)
+    {
+        var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(input)!;
+        var call = new FunctionCallContent("c1", name, args);
+        var messages = new List<ChatMessage> { new(ChatRole.Assistant, new List<AIContent> { call }), new(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("c1", Json("{\"status\":\"success\"}")) }) };
+        var compact = HistoryCompactor.Compact(messages)[0].Contents.OfType<FunctionCallContent>().Single();
+        Assert.Equal("c1", compact.CallId);
+        Assert.Equal(name, compact.Name);
+        Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(expected), JsonSerializer.SerializeToNode(compact.Arguments)));
+        Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(input), JsonSerializer.SerializeToNode(args)));
+    }
 
     [Fact]
     public void A_result_keeps_its_status_and_affected_ids_and_drops_the_data()

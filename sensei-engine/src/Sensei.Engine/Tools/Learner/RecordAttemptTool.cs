@@ -33,7 +33,7 @@ public sealed class RecordAttemptTool : SenseiTool<RecordAttemptArgs>
 {
     public override string Name => "record_attempt";
 
-    public override string Description => "Record evidence of one learner attempt at a skill target, quoting the learner's words; the engine decides the outcome from the help given.";
+    public override string Description => "Record learner evidence; the engine decides outcome.";
 
     protected override string SchemaJson => """
         {

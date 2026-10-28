@@ -25,12 +25,14 @@ internal sealed class EngineFunctionInvoker
     private readonly EngineCore _core;
     private readonly Func<TurnScope?> _active;
     private readonly Action<TurnScope, string> _raiseState;
+    private readonly HashSet<string> _unavailable;
 
-    public EngineFunctionInvoker(EngineCore core, Func<TurnScope?> active, Action<TurnScope, string> raiseState)
+    public EngineFunctionInvoker(EngineCore core, Func<TurnScope?> active, Action<TurnScope, string> raiseState, HashSet<string>? unavailable = null)
     {
         _core = core;
         _active = active;
         _raiseState = raiseState;
+        _unavailable = unavailable ?? new HashSet<string>(StringComparer.Ordinal);
     }
 
     public async ValueTask<object?> InvokeAsync(FunctionInvocationContext context, CancellationToken cancellationToken)
@@ -46,7 +48,7 @@ internal sealed class EngineFunctionInvoker
         ToolResult result;
         try
         {
-            result = await _core.Pipeline.InvokeAsync(name, json, callId, scope.Turn.GenerationId, cancellationToken).ConfigureAwait(false);
+            result = await _core.Pipeline.InvokeAsync(name, json, callId, scope.Turn.GenerationId, cancellationToken, _unavailable.Contains(name)).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

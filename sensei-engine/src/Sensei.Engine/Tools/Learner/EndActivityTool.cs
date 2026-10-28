@@ -17,7 +17,7 @@ public sealed class EndActivityTool : SenseiTool<EndActivityArgs>
 {
     public override string Name => "end_activity";
 
-    public override string Description => "End the current activity and show the learner a summary of what they practised; speak any recap before calling this.";
+    public override string Description => "End activity and show a summary.";
 
     protected override string SchemaJson => """
         {

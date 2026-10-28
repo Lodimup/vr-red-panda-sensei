@@ -23,7 +23,7 @@ public sealed class UpdateChallengeTool : SenseiTool<UpdateChallengeArgs>
 {
     public override string Name => "update_challenge";
 
-    public override string Description => "Revise the active task's instruction or conditions, or abandon it, giving a short reason.";
+    public override string Description => "Revise or abandon the active task.";
 
     public override bool IsMutating => true;
 

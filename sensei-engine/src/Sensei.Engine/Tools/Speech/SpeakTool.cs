@@ -32,7 +32,7 @@ public sealed class SpeakTool : SenseiTool<SpeakArgs>
 {
     public override string Name => "speak";
 
-    public override string Description => "Say something to the learner out loud, with Japanese and English in separate segments; nothing else Sensei writes is ever heard.";
+    public override string Description => "Speak Japanese and English in separate segments.";
 
     protected override string SchemaJson => """
         {

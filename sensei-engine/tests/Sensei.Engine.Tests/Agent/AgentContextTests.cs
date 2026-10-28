@@ -3,6 +3,7 @@ using Sensei.Engine.Agent;
 using Sensei.Engine.Catalog;
 using Sensei.Engine.Learner;
 using Sensei.Engine.Tasks;
+using Sensei.Engine.Tools;
 using Sensei.Engine.Tests.Foundation;
 using Sensei.Engine.Tests.TestKit;
 using static Sensei.Engine.Tests.Agent.AgentTestSupport;
@@ -25,6 +26,38 @@ public sealed class AgentContextTests
         }
         t.Core.FlushNotifications();
         return view;
+    }
+
+    [Theory]
+    [InlineData(false, "start_challenge", "update_challenge")]
+    [InlineData(true, "update_challenge", "start_challenge")]
+    public async Task Challenge_tools_follow_task_state_and_unoffered_calls_fail(bool active, string offered, string unavailable)
+    {
+        var chat = new ScriptedChatClient().EnqueueFunctionCalls(("c1", unavailable, "{}")).EnqueueText("done");
+        await using var t = await EngineAsync(chat);
+        if (active) StartTask(t);
+        await t.Engine.RunTurnAsync("hi");
+        var tools = chat.Requests[0].Options!.Tools!.Select(x => x.Name).ToArray();
+        Assert.Contains(offered, tools);
+        Assert.DoesNotContain(unavailable, tools);
+        Assert.Equal("unknown_tool", ErrorCodeOf(Assert.Single(ResultsIn(chat.Requests[1]))));
+        Assert.Equal(active, t.Core.Tasks.Active is not null);
+    }
+
+    [Fact]
+    public async Task Challenge_tools_refresh_between_rounds_after_a_task_starts()
+    {
+        var chat = new ScriptedChatClient().EnqueueFunctionCalls(("c1", "start_challenge", "{\"family\":\"discover_request\",\"instruction\":{\"english\":\"Ask for water\"},\"skill_targets\":[{\"dimension\":\"vocabulary\",\"key\":\"water\"}],\"predicates\":[{\"type\":\"in_region\",\"object_id\":\"water_1\",\"region\":\"learner_hand\"}]}"))
+            .EnqueueText("done");
+        await using var t = await EngineAsync(chat);
+        t.Engine.BeginTurn("setup");
+        Assert.Equal(ToolStatuses.Success, (await t.CallAsync("spawn_objects", "{\"objects\":[{\"catalog_id\":\"water\"}]}")).Status);
+        await t.Engine.RunTurnAsync("practice");
+        Assert.Equal("success", StatusOf(Assert.Single(ResultsIn(chat.Requests[1]))));
+        Assert.Contains(chat.Requests[0].Options!.Tools!, tool => tool.Name == "start_challenge");
+        Assert.DoesNotContain(chat.Requests[0].Options!.Tools!, tool => tool.Name == "update_challenge");
+        Assert.Contains(chat.Requests[1].Options!.Tools!, tool => tool.Name == "update_challenge");
+        Assert.DoesNotContain(chat.Requests[1].Options!.Tools!, tool => tool.Name == "start_challenge");
     }
 
     // ---------------------------------------------------------------- S62 system prompt
@@ -92,8 +125,11 @@ public sealed class AgentContextTests
     {
         var chat = new ScriptedChatClient().EnqueueText("ok");
         await using var t = await EngineAsync(chat);
+        lock (t.Core.Sync) t.Core.Learner.Profile.WorkingLevel = level;
         await t.Engine.RunTurnAsync("hi");
-        Assert.Contains($"- `{level}`:", Instructions(chat));
+        var text = Instructions(chat);
+        foreach (var candidate in new[] { "pre_n5", "n5", "n4", "n3", "n2", "n1" })
+            Assert.Equal(candidate == level, text.Contains($"- `{candidate}`:", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -106,7 +142,7 @@ public sealed class AgentContextTests
 
         Assert.Equal(12, ObjectCatalog.Entries.Count);
         foreach (var e in ObjectCatalog.Entries)
-            Assert.Contains($"| {e.CatalogId} | {e.Japanese} | {e.Reading} | {e.Romaji} | {e.English} | {(e.IsContainer ? "yes" : "no")} |", text);
+            Assert.Contains($"{e.CatalogId} {e.Japanese} {e.Reading} {e.Romaji} {e.English} {(e.IsContainer ? "container" : "non-container")}", text);
     }
 
     [Fact]
@@ -129,7 +165,11 @@ public sealed class AgentContextTests
         await t.Engine.RunTurnAsync("hi");
         var text = Instructions(chat);
 
-        Assert.Contains("use only `in_region` for the requested `object_id` in `learner_hand`, never `selected`", text);
+        Assert.Contains("use `in_region` with `region` `learner_hand`, never `selected`", text);
+        Assert.Contains("Use `object_id` for an object already in the snapshot", text);
+        Assert.Contains("use a `selector` with its `catalog_id`", text);
+        Assert.Contains("call `start_challenge` after `spawn_objects` in that same response", text);
+        Assert.Contains("\"selector\":{\"catalog_id\":\"water\"}", text);
         Assert.Contains("`move_object(water_1 to learner_hand, fulfill_request)` + `record_attempt(their words)`", text);
         Assert.Contains("`spawn_objects` + `record_attempt`, request 2 = `move_object` with the new id", text);
         Assert.Contains("At most one `start_challenge` per response", text);
@@ -215,9 +255,25 @@ public sealed class AgentContextTests
         var text = Instructions(chat);
         Assert.Contains("starting band: not chosen yet", text);
         Assert.Contains("pre_n5", text);
-        Assert.Contains("pinned by the learner (never change): none", text);
-        Assert.Contains("recommendations: 0 ", text);
-        Assert.Contains("review due: 0 ", text);
+        Assert.DoesNotContain("pinned by the learner (never change):", text);
+        Assert.DoesNotContain("recommendations:", text);
+        Assert.DoesNotContain("review due:", text);
+    }
+
+    [Fact]
+    public async Task Nonempty_pins_recommendations_and_review_are_rendered()
+    {
+        var chat = new ScriptedChatClient().EnqueueText("ok");
+        await using var t = await EngineAsync(chat);
+        await t.Engine.SetPreferenceByPlayerAsync(new SupportPatch { ShowRomaji = true });
+        lock (t.Core.Sync)
+            for (var i = 0; i < 2; i++)
+                t.Core.Learner.Profile.Evidence.Add(new EvidenceRecord { SessionId = "earlier", Target = new SkillTarget { Dimension = "production", Key = "water" }, Outcome = AttemptOutcomes.ConfirmedIncorrect });
+        await t.Engine.RunTurnAsync("hi");
+        var text = Instructions(chat);
+        Assert.Contains("pinned by the learner (never change): show_romaji", text);
+        Assert.Contains("recommendations: 1", text);
+        Assert.Contains("review due: 1", text);
     }
 
     [Fact]
