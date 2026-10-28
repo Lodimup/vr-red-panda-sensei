@@ -22,7 +22,7 @@ namespace Sensei.App
     public sealed class EngineHost : MonoBehaviour
     {
         private readonly MainThreadQueue queue = new MainThreadQueue(); private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
-        private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private int turnCount; public int TestTranscriptStarts { get; private set; } private string engineState = "idle"; private string? voiceFailure;
+        private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private int turnCount; public int TestTranscriptStarts { get; private set; } private string engineState = "idle"; private string? voiceFailure;
         private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey; private bool destroyed;
         private void Start()
         {
@@ -87,17 +87,17 @@ namespace Sensei.App
             if (!hasKey) { Report("No API key. Push sensei.env (see README)."); return false; }
             try
             {
-                Interlocked.Increment(ref turnCount); var watch = Stopwatch.StartNew(); var result = await Task.Run(() => engine.RunPlayerEventTurnAsync(kind, lifetime.Token));
+                turnBusy = true; Interlocked.Increment(ref turnCount); var watch = Stopwatch.StartNew(); var result = await Task.Run(() => engine.RunPlayerEventTurnAsync(kind, lifetime.Token));
                 var tools = string.Join(",", result.ToolCalls.Select(t => t.Tool)); Debug.Log($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={tools}"); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message);
                 return result.Status == "completed";
             }
             catch (OperationCanceledException) { return false; }
             catch (Exception error) { Debug.LogError("RPS_TURN failed type=" + error.GetType().Name); return false; }
-            finally { Interlocked.Decrement(ref turnCount); }
+            finally { turnBusy = false; Interlocked.Decrement(ref turnCount); }
         }
         public bool CanTalk => ready && hasKey;
-        public bool VoiceIdle => CanTalk && Volatile.Read(ref turnCount) == 0 && !(player?.IsPlaying ?? false);
-        public bool TestIdle => VoiceIdle && engineState == "idle";
+        public bool VoiceIdle => CanTalk && !turnBusy && !(player?.IsPlaying ?? false);
+        public bool TestIdle => VoiceIdle && Volatile.Read(ref turnCount) == 0 && engineState == "idle";
         public async Task<bool> TestSelect(string catalog) { var current = engine; if (current == null) return false; return await Task.Run(() => { var item = current.GetScene().Instances.FirstOrDefault(x => x.CatalogId == catalog); return item != null && current.PlayerSelect(item.Id).Ok; }); }
         public async Task<bool> TestMove(string catalog, string destination) { var current = engine; if (current == null) return false; return await Task.Run(() => { var scene = current.GetScene(); var item = scene.Instances.FirstOrDefault(x => x.CatalogId == catalog); var container = scene.Instances.FirstOrDefault(x => x.CatalogId == destination); return item != null && current.PlayerMove(item.Id, container == null ? destination : null, container?.Id).Ok; }); }
         public bool SpeechPlaying => player?.IsPlaying ?? false;
@@ -110,11 +110,11 @@ namespace Sensei.App
         public async Task RunTranscript(string transcript)
         {
             var current = engine; if (current == null || !hasKey) return;
-            Interlocked.Increment(ref turnCount); TestTranscriptStarts++;
+            turnBusy = true; Interlocked.Increment(ref turnCount); TestTranscriptStarts++;
             try { var watch = Stopwatch.StartNew(); var result = await Task.Run(() => current.RunTurnAsync(transcript, lifetime.Token)); Debug.Log($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={string.Join(",", result.ToolCalls.Select(t => t.Tool))}"); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message); }
             catch (OperationCanceledException) { }
             catch (Exception e) { Debug.LogError("RPS_TURN failed type=" + e.GetType().Name); }
-            finally { Interlocked.Decrement(ref turnCount); }
+            finally { turnBusy = false; Interlocked.Decrement(ref turnCount); }
         }
         private sealed class UnavailableSpeechOutput : ISpeechOutput { public Task<SpeechOutcome> SpeakAsync(SpeechRequest request, CancellationToken ct) => Task.FromResult(new SpeechOutcome(SpeechStatuses.Failed, "voice unavailable", 0)); }
         public async void Select(string id)
