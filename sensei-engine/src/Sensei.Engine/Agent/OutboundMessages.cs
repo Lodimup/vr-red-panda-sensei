@@ -13,7 +13,8 @@ namespace Sensei.Engine.Agent;
 /// function calls and function results is sent at all. The conversation history keeps what the provider said and what the model
 /// asked for; this makes the copy that goes out on the next request. It is an allow-list: a message keeps only
 /// <see cref="TextContent"/>, <see cref="FunctionCallContent"/> and <see cref="FunctionResultContent"/>, rebuilt from sanitized
-/// strings (the text, the id, name and arguments of a call, the id and result of a result); every other content type (reasoning,
+/// strings (the text, the name and arguments of a call, the result of a result; a call id is a protocol identifier and loses only a known
+/// secret, by replacement, S133); every other content type (reasoning,
 /// error, URI, data, usage, anything a provider or a later framework version adds) is removed before the request is built, and its
 /// type name is reported to the caller for the trace. A message left with no content by that is dropped. The history itself is not
 /// changed.
@@ -26,14 +27,16 @@ internal static class OutboundMessages
     /// sequence whose enumerator throws, a dictionary that cannot be copied) is not sent, and the only thing that leaves is the engine's
     /// own <see cref="OutboundRejectedException"/> (reason <c>not_serializable</c>); the foreign exception and its text are dropped.
     /// </summary>
-    public static List<ChatMessage> Sanitized(IEnumerable<ChatMessage> messages, Secrets secrets, List<string> notes, bool resultsAsText = false)
+    public static List<ChatMessage> Sanitized(IEnumerable<ChatMessage> messages, Secrets secrets, List<string> notes, bool resultsAsText = false, Func<string>? engineCallId = null)
     {
         try
         {
+            var source = messages as IReadOnlyList<ChatMessage> ?? new List<ChatMessage>(messages);
+            var ids = new CallIdRewriter(secrets, engineCallId, () => CallIdRewriter.IdsIn(source));
             var copy = new List<ChatMessage>();
-            foreach (var message in messages)
+            foreach (var message in source)
             {
-                var sanitized = Sanitized(message, secrets, notes, resultsAsText);
+                var sanitized = Sanitized(message, secrets, notes, resultsAsText, ids);
                 if (sanitized is not null) copy.Add(sanitized);
             }
             return copy;
@@ -44,12 +47,12 @@ internal static class OutboundMessages
         }
     }
 
-    private static ChatMessage? Sanitized(ChatMessage message, Secrets secrets, List<string> notes, bool resultsAsText)
+    private static ChatMessage? Sanitized(ChatMessage message, Secrets secrets, List<string> notes, bool resultsAsText, CallIdRewriter ids)
     {
         var contents = new List<AIContent>();
         foreach (var content in message.Contents)
         {
-            var kept = Sanitized(content, secrets, notes, resultsAsText);
+            var kept = Sanitized(content, secrets, notes, resultsAsText, ids);
             if (kept is not null) contents.Add(kept);
         }
         if (contents.Count == 0 && message.Contents.Count > 0) return null;
@@ -61,7 +64,7 @@ internal static class OutboundMessages
         };
     }
 
-    private static AIContent? Sanitized(AIContent content, Secrets secrets, List<string> notes, bool resultsAsText)
+    private static AIContent? Sanitized(AIContent content, Secrets secrets, List<string> notes, bool resultsAsText, CallIdRewriter ids)
     {
         switch (content)
         {
@@ -85,7 +88,7 @@ internal static class OutboundMessages
                 // A call the provider named with an empty string (S85) goes back under a placeholder: the wire format needs some name, and
                 // the call id is what pairs it with the engine result.
                 var name = secrets.Sanitize(call.Name);
-                return new FunctionCallContent(secrets.Sanitize(call.CallId) ?? "", string.IsNullOrEmpty(name) ? "unknown_tool" : name, arguments)
+                return new FunctionCallContent(ids.Clean(call.CallId), string.IsNullOrEmpty(name) ? "unknown_tool" : name, arguments)
                 {
                     InformationalOnly = call.InformationalOnly,
                 };
@@ -94,7 +97,7 @@ internal static class OutboundMessages
             {
                 var clean = JsonRedaction.SanitizedValue(result.Result, secrets, out var oversized);
                 if (oversized) notes.Add("result over " + JsonRedaction.MaxNodes + " values (replaced)");
-                return new FunctionResultContent(secrets.Sanitize(result.CallId) ?? "", resultsAsText ? AdapterResult(clean) : clean);
+                return new FunctionResultContent(ids.Clean(result.CallId), resultsAsText ? AdapterResult(clean) : clean);
             }
             default:
                 notes.Add("removed " + (content.GetType().FullName ?? content.GetType().Name));

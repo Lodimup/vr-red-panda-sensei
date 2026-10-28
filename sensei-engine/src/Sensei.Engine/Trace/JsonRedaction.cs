@@ -271,9 +271,15 @@ internal static class JsonRedaction
     /// <paramref name="maxValues"/> values yields <see cref="JsonWalkStatus.TooManyValues"/> and no output. A string that itself holds
     /// JSON is just a string: it is cleaned as text and never parsed again. <paramref name="changed"/> says whether any string or name
     /// came out different, so a caller can send the original bytes untouched when nothing needed cleaning. Never throws.
+    /// <para>
+    /// <paramref name="cleanCallId"/> is the one exception to "every string": when it is given, the body is read as an OpenAI chat-completions
+    /// request and the string values of <c>id</c> in <c>messages[].tool_calls[]</c> items and of <c>tool_call_id</c> in <c>messages[]</c> items
+    /// (S133, call ids) go through it instead of <paramref name="clean"/>, at exactly those two places and nowhere else. Property names, and
+    /// strings that hold JSON, are never call ids.
+    /// </para>
     /// </summary>
     internal static JsonWalkStatus SanitizeJson(ReadOnlySpan<byte> json, Func<string, string> clean, int maxValues,
-        out byte[] output, out int values, out bool changed)
+        out byte[] output, out int values, out bool changed, Func<string, string>? cleanCallId = null)
     {
         output = Array.Empty<byte>();
         values = 0;
@@ -292,6 +298,7 @@ internal static class JsonRedaction
             {
                 var count = 0;
                 var differs = false;
+                var position = cleanCallId is null ? null : new CallIdPosition();
                 while (reader.Read())
                 {
                     switch (reader.TokenType)
@@ -299,15 +306,18 @@ internal static class JsonRedaction
                         case JsonTokenType.PropertyName:
                         {
                             var name = reader.GetString() ?? "";
+                            position?.Name(name);
                             var cleanName = clean(name);
                             if (!string.Equals(name, cleanName, StringComparison.Ordinal)) differs = true;
                             writer.WritePropertyName(cleanName);
                             continue;
                         }
                         case JsonTokenType.EndObject:
+                            position?.End();
                             writer.WriteEndObject();
                             continue;
                         case JsonTokenType.EndArray:
+                            position?.End();
                             writer.WriteEndArray();
                             continue;
                     }
@@ -315,15 +325,17 @@ internal static class JsonRedaction
                     switch (reader.TokenType)
                     {
                         case JsonTokenType.StartObject:
+                            position?.Start(isObject: true);
                             writer.WriteStartObject();
                             break;
                         case JsonTokenType.StartArray:
+                            position?.Start(isObject: false);
                             writer.WriteStartArray();
                             break;
                         case JsonTokenType.String:
                         {
                             var text = reader.GetString() ?? "";
-                            var cleanText = clean(text);
+                            var cleanText = position is { IsCallId: true } ? cleanCallId!(text) : clean(text);
                             if (!string.Equals(text, cleanText, StringComparison.Ordinal)) differs = true;
                             writer.WriteStringValue(cleanText);
                             break;
@@ -358,6 +370,58 @@ internal static class JsonRedaction
             changed = false;
             return JsonWalkStatus.NotJson;
         }
+    }
+
+    /// <summary>
+    /// Where the forward-only reader of <see cref="SanitizeJson"/> stands in an OpenAI chat-completions request body, as far as the two call
+    /// id fields need (S133): the kind of each of the first five open containers and the last property name read in each. It recognizes a
+    /// string value that is <c>messages[i].tool_call_id</c> or <c>messages[i].tool_calls[j].id</c> of the root object, and nothing else:
+    /// the same name anywhere else in the body (another depth, another parent, an array element, a property name) is an ordinary string.
+    /// </summary>
+    private sealed class CallIdPosition
+    {
+        private const int Tracked = 5;
+        private const byte ObjectKind = 1;
+        private const byte ArrayKind = 2;
+
+        private readonly byte[] _kind = new byte[Tracked + 1];
+        private readonly string?[] _name = new string?[Tracked + 1];
+        private int _level;
+
+        /// <summary>A container opens: it is one level deeper, with no property name read in it yet.</summary>
+        public void Start(bool isObject)
+        {
+            _level++;
+            if (_level > Tracked) return;
+            _kind[_level] = isObject ? ObjectKind : ArrayKind;
+            _name[_level] = null;
+        }
+
+        /// <summary>The innermost container closes.</summary>
+        public void End()
+        {
+            if (_level <= Tracked)
+            {
+                _kind[_level] = 0;
+                _name[_level] = null;
+            }
+            _level--;
+        }
+
+        /// <summary>A property name was read in the innermost container (the name as the reader unescaped it).</summary>
+        public void Name(string name)
+        {
+            if (_level <= Tracked) _name[_level] = name;
+        }
+
+        /// <summary>True when a string value read now is a call id.</summary>
+        public bool IsCallId =>
+            _level >= 3 && InMessage && (
+                (_level == 3 && _name[3] == "tool_call_id")
+                || (_level == 5 && _name[3] == "tool_calls" && _kind[4] == ArrayKind && _kind[5] == ObjectKind && _name[5] == "id"));
+
+        /// <summary>Inside an item of the <c>messages</c> array of the root object.</summary>
+        private bool InMessage => _kind[1] == ObjectKind && _name[1] == "messages" && _kind[2] == ArrayKind && _kind[3] == ObjectKind;
     }
 
     /// <summary>

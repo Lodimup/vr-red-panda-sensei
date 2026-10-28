@@ -17,6 +17,11 @@ namespace Sensei.Engine.Llm;
 /// re-serialized (same structure, same order, numbers as written). A body that is not one JSON document, or has more values than the cap,
 /// is not sent: <see cref="OutboundRejectedException"/>. A string that itself holds JSON is only a string here, cleaned as text and never
 /// parsed again. The Authorization header is not touched, and neither is any request without a body.
+/// <para>
+/// S133, call ids: the one string the credential pattern is not applied to is a call id, at the two places a chat-completions body carries
+/// one (<c>id</c> of a <c>tool_calls</c> item, <c>tool_call_id</c> of a tool message). Those are only checked for known secrets; one that holds
+/// one is replaced, together with every other occurrence of the same id, by an id of the engine's own that no id in the body uses.
+/// </para>
 /// </summary>
 internal sealed class OutboundGuard : PipelinePolicy
 {
@@ -71,7 +76,23 @@ internal sealed class OutboundGuard : PipelinePolicy
     {
         Secrets secrets;
         lock (_gate) secrets = _secrets;
-        var status = JsonRedaction.SanitizeJson(body, JsonRedaction.Cleaner(secrets), MaxValues, out var cleaned, out _, out var changed);
+        var clean = JsonRedaction.Cleaner(secrets);
+
+        // First read: every call id as it stands (S133), and whether any holds a known secret.
+        var ids = new List<string>();
+        var holdsSecret = false;
+        var status = JsonRedaction.SanitizeJson(body, clean, MaxValues, out var cleaned, out _, out var changed, id =>
+        {
+            ids.Add(id);
+            holdsSecret |= secrets.ContainsKnown(id);
+            return id;
+        });
+        if (status != JsonWalkStatus.Ok) throw OutboundRejectedException.For(status);
+        if (!holdsSecret) return changed ? cleaned : body;
+
+        // Rare: an id holds a known secret. Read again with every id of the body known, so the replacements cannot collide with one.
+        var rewriter = new CallIdRewriter(secrets, null, () => ids);
+        status = JsonRedaction.SanitizeJson(body, clean, MaxValues, out cleaned, out _, out changed, rewriter.Clean);
         if (status != JsonWalkStatus.Ok) throw OutboundRejectedException.For(status);
         return changed ? cleaned : body;
     }

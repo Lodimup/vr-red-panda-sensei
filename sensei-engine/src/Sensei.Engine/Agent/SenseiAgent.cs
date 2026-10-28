@@ -90,7 +90,7 @@ internal sealed class SenseiAgent : IAgentRunner
             // A client that cannot be asked is a client without a guard.
         }
         onWire = guard is not null;
-        if (guard is null) return new SerializedRequestGuard(provider, core.Secrets);
+        if (guard is null) return new SerializedRequestGuard(provider, core.Secrets, core.Pipeline.ReserveEngineCallId);
         guard.Attach(core.Secrets);
         return provider;
     }
