@@ -61,9 +61,9 @@ try:
     key = None
     call('shell', 'svc', 'wifi', 'disable')
     if 'disabled' not in capture('shell', 'cmd', 'wifi', 'status').lower(): raise RuntimeError('Could not confirm Wi-Fi disabled')
-    # RULING(Handler 2026-10-28): pause the dev Guardian prompt for the desk-mounted headset, then reset it in cleanup.
+    # Orchestrator decision 2026-10-28: pause the dev Guardian prompt for the desk-mounted headset, then reset it in cleanup.
     guardian_paused = True; call('shell', 'setprop', 'debug.oculus.guardian_pause', '1')
-    # RULING(Handler 2026-10-28): keep the desk-mounted headset awake while recording.
+    # Orchestrator decision 2026-10-28: keep the desk-mounted headset awake while recording.
     proximity_active = True; call('shell', 'am', 'broadcast', '-a', 'com.oculus.vrpowermanager.prox_close')
     (run / 'u0v-launch.txt').write_text('Guardian pause set to 1 before launch.\n')
     if probe:
@@ -80,7 +80,7 @@ try:
         blocked = blocking_dialog()
         if blocked:
             if restarted_shell: raise RuntimeError('Quest launch remains blocked: ' + blocked)
-            # RULING(Handler 2026-10-28): restart vrshell once only for the observed launch-check or Guardian dialog.
+            # Orchestrator decision 2026-10-28: restart vrshell once only for the observed launch-check or Guardian dialog.
             print('Quest dialog observed; restarting vrshell once: ' + blocked, flush=True)
             with (run / 'u0v-launch.txt').open('a') as launch_log: launch_log.write('Restarted vrshell after: ' + blocked + '\n')
             call('shell', 'am', 'force-stop', 'com.oculus.vrshell')
@@ -128,7 +128,7 @@ try:
                     if line == 'RPS_VOICE tts_complete' and not online:
                         (run / 'u0v-meminfo.txt').write_text(capture('shell', 'dumpsys', 'meminfo', package))
                         call('shell', 'svc', 'wifi', 'enable')
-                        # RULING(Handler 2026-10-28): play corpus through the Mac speakers at volume 70 for Quest mic tests.
+                        # Orchestrator decision 2026-10-28: play corpus through the Mac speakers at volume 70 for Quest mic tests.
                         volume_changed = True
                         subprocess.run(['osascript', '-e', 'set volume output volume 70'], check=True)
                         subprocess.run(['osascript', '-e', 'set volume without output muted'], check=True)

@@ -11,6 +11,9 @@ internal static class PronunciationClaimGuard
 
     private static readonly Regex LearnerReference = new(@"\b(?:you|your|you're|youre|ur|u|yours|learner)\b|あなた|きみ|君", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    public static bool CheckJapaneseLearnerClaim(string? value) => value is not null &&
+        Regex.IsMatch(value, @"あなた|きみ|君|学習者") && Regex.IsMatch(value, @"発音|アクセント|イントネーション|ピッチ");
+
     public static bool CheckLearnerClaim(string? value) => value is not null && LearnerReference.IsMatch(value) && Check(value);
 
     public static bool Check(params string?[] values)

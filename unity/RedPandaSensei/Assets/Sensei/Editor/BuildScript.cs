@@ -111,7 +111,7 @@ namespace Sensei.Editor
             EditorUtility.SetDirty(touch);
             xr.renderMode = OpenXRSettings.RenderMode.SinglePassInstanced;
             var config = OVRProjectConfig.CachedProjectConfig;
-            // RULING(Handler 2026-10-28): allow launch with sleeping controllers; hand tracking is optional.
+            // Orchestrator decision 2026-10-28: allow launch with sleeping controllers; hand tracking is optional.
             config.handTrackingSupport = OVRProjectConfig.HandTrackingSupport.ControllersAndHands;
             config.insightPassthroughSupport = OVRProjectConfig.FeatureSupport.Required;
             config.targetDeviceTypes = new System.Collections.Generic.List<OVRProjectConfig.DeviceType> { OVRProjectConfig.DeviceType.Quest3 };

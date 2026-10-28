@@ -68,12 +68,12 @@ public sealed class ShowHintTool : SenseiTool<ShowHintArgs>
     {
         var c = args.Content;
         if (args.Kind == "vocabulary_card"
-            ? PronunciationClaimGuard.CheckLearnerClaim(c.English) || PronunciationClaimGuard.Check(args.TargetKey)
+            ? PronunciationClaimGuard.CheckLearnerClaim(c.English) || PronunciationClaimGuard.CheckJapaneseLearnerClaim(c.Japanese) || PronunciationClaimGuard.Check(args.TargetKey)
             : PronunciationClaimGuard.Check(c.Japanese, c.Reading, c.Romaji, c.English, args.TargetKey))
             return PronunciationClaimGuard.Detail;
         if (string.IsNullOrEmpty(c.Japanese) && string.IsNullOrEmpty(c.Reading) && string.IsNullOrEmpty(c.Romaji) && string.IsNullOrEmpty(c.English))
             return "content: at least one of japanese, reading, romaji, english is required";
-        if (HiddenLevelGuard.Check(c.Japanese) || HiddenLevelGuard.Check(c.Reading) || HiddenLevelGuard.Check(c.Romaji) || HiddenLevelGuard.Check(c.English))
+        if (HiddenLevelGuard.Check(c.Japanese) || HiddenLevelGuard.Check(c.Reading) || HiddenLevelGuard.Check(c.Romaji) || HiddenLevelGuard.Check(c.English) || HiddenLevelGuard.Check(string.Join(" ", new[] { c.Japanese, c.Reading, c.Romaji, c.English })))
             return HiddenLevelGuard.Detail;
         return null;
     }

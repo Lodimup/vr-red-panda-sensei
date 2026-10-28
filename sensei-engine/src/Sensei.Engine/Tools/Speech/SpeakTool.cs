@@ -72,6 +72,7 @@ public sealed class SpeakTool : SenseiTool<SpeakArgs>
         foreach (var s in args.Segments)
             if (HiddenLevelGuard.Check(s.Text) || HiddenLevelGuard.Check(s.Reading) || HiddenLevelGuard.Check(s.Romaji) || HiddenLevelGuard.Check(s.Translation))
                 return HiddenLevelGuard.Detail;
+        if (HiddenLevelGuard.Check(string.Join(" ", args.Segments.Select(s => s.Text)))) return HiddenLevelGuard.Detail;
         return null;
     }
 

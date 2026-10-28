@@ -137,7 +137,7 @@ public sealed class VoiceBench : MonoBehaviour
             sw.Restart();
             using (var local = await SenseVoiceRecognizer.LoadAsync(asrDir))
             {
-                // RULING(Handler 2026-10-28): classic SenseVoice uses in-graph ITN; Nano is an optional ITN-off comparison.
+                // Orchestrator decision 2026-10-28: classic SenseVoice uses in-graph ITN; Nano is an optional ITN-off comparison.
                 LogJson("asr_load", new { ms = sw.Elapsed.TotalMilliseconds, model = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09", threads = 2, language = "auto", itn = true });
                 sw.Restart();
                 SenseVoiceRecognizer optionalNano = null;
@@ -202,7 +202,7 @@ public sealed class VoiceBench : MonoBehaviour
                     var latencies = group.Select(m => m.ms).OrderBy(x => x).ToList();
                     LogJson("asr_summary", new { model = group.Key.name, group = group.Key.group, count = latencies.Count, mean_cer = group.Average(m => m.cer), p50_ms = Percentile(latencies, 0.5), p95_ms = Percentile(latencies, 0.95) });
                 }
-                // RULING(Handler 2026-10-28): play the corpus from the nearby Mac and measure actual Quest microphone input.
+                // Orchestrator decision 2026-10-28: play the corpus from the nearby Mac and measure actual Quest microphone input.
                 var mic = gameObject.AddComponent<MicCapture>();
                 mic.DeviceName = ReadSetting("RPS_MIC_DEVICE");
                 var micMeasurements = new List<(string name, string group, double cer, double ms)>();
@@ -308,7 +308,7 @@ public sealed class VoiceBench : MonoBehaviour
         return null;
     }
 
-    // RULING(Handler 2026-10-28): test the default Quest microphone, then a named device if default is silent.
+    // Orchestrator decision 2026-10-28: test the default Quest microphone, then a named device if default is silent.
     private async Task RunMicProbeAsync()
     {
         var token = destroyCancellationToken;
@@ -354,11 +354,11 @@ public sealed class VoiceBench : MonoBehaviour
     {
         byte[] bytes = await Download("https://openrouter.ai/api/v1/models", ct);
         var data = (JArray)JObject.Parse(Encoding.UTF8.GetString(bytes))["data"];
-        // RULING(Handler 2026-10-28): exclude :free models; compare the cheapest paid audio-input model and paid Gemini Flash.
+        // Orchestrator decision 2026-10-28: exclude :free models; compare the cheapest paid audio-input model and paid Gemini Flash.
         var audio = data.OfType<JObject>().Where(m => m["architecture"]?["input_modalities"] is JArray inputs && inputs.Any(x => (string)x == "audio"))
             .Where(m => !((string)m["id"]).Contains(":free") && Price(m, "prompt") >= 0 && Price(m, "completion") >= 0 && (Price(m, "prompt") > 0 || Price(m, "completion") > 0))
             .ToList();
-        // RULING(Handler 2026-10-28): benchmark exactly these two paid audio models.
+        // Orchestrator decision 2026-10-28: benchmark exactly these two paid audio models.
         var requested = new[] { "mistralai/voxtral-small-24b-2507", "google/gemini-2.5-flash-lite" };
         var selected = new List<string>();
         foreach (string id in requested)

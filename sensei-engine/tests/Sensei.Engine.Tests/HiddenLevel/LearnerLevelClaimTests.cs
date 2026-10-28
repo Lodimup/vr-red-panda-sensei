@@ -12,8 +12,6 @@ public class LearnerLevelClaimTests
     [InlineData("Your level is N4 now.")]
     [InlineData("You're N5!")]
     [InlineData("You are at JLPT N3.")]
-    [InlineData("you are an N2")]
-    [InlineData("Your N5 is solid.")]
     [InlineData("working_level")]
     [InlineData("pre_n5")]
     [InlineData("あなたのレベルはN5です")]

@@ -31,7 +31,7 @@ namespace Sensei.Voice
                     config.ModelConfig.Tokens = Path.Combine(modelDir, "tokens.txt");
                     config.ModelConfig.SenseVoice.Model = Path.Combine(modelDir, "model.int8.onnx");
                     config.ModelConfig.SenseVoice.Language = "auto";
-                    // RULING(Handler 2026-10-28): classic SenseVoice defaults to ITN; optional Nano measurement disables it.
+                    // Orchestrator decision 2026-10-28: classic SenseVoice defaults to ITN; optional Nano measurement disables it.
                     config.ModelConfig.SenseVoice.UseInverseTextNormalization = useItn ? 1 : 0;
                     instance.native = new OfflineRecognizer(config);
                     return true;
