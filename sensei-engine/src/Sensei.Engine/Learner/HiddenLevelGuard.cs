@@ -1,4 +1,5 @@
 using Sensei.Engine.Text;
+using System.Text.RegularExpressions;
 
 namespace Sensei.Engine.Learner;
 
@@ -11,7 +12,10 @@ public static class HiddenLevelGuard
     /// <summary>The detail of the <c>invalid_arguments</c> failure.</summary>
     public const string Detail = "hidden_level";
 
-    /// <summary>True when <paramref name="text"/> contains <c>working level</c> or <c>working_level</c> (case-insensitive) and must be refused.</summary>
+    private static readonly Regex LevelTerms = new(@"\bjlpt\b|pre[_ -]?n[1-5]|\b[nｎ][1-5]\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>True when presentation text contains a prohibited level reference.</summary>
     public static bool Check(string? text) =>
-        TextRules.ContainsIgnoreCase(text, "working level") || TextRules.ContainsIgnoreCase(text, "working_level");
+        TextRules.ContainsIgnoreCase(text, "working level") || TextRules.ContainsIgnoreCase(text, "working_level") ||
+        (text is not null && LevelTerms.IsMatch(text));
 }

@@ -576,6 +576,7 @@ public sealed class ShowHintTests
     [InlineData("reading", "working_level")]
     [InlineData("romaji", "WORKING LEVEL")]
     [InlineData("english", "Your working level is N3.")]
+    [InlineData("english", "That word is N5.")]
     public async Task S80_hint_content_mentioning_the_working_level_is_refused_with_hidden_level(string field, string value)
     {
         await using var t = await NewAsync();
@@ -590,10 +591,10 @@ public sealed class ShowHintTests
     }
 
     [Fact]
-    public async Task S80_a_hint_may_talk_about_jlpt_levels_in_general()
+    public async Task S80_an_ordinary_hint_is_allowed()
     {
         await using var t = await NewAsync();
-        Assert.Equal(ToolStatuses.Success, (await Hint(t, "explanation", Content(english: "This word is N5 vocabulary."))).Status);
+        Assert.Equal(ToolStatuses.Success, (await Hint(t, "explanation", Content(english: "This is a beginner word."))).Status);
     }
 
     // ------------------------------------------------------------ the hint card never carries the level

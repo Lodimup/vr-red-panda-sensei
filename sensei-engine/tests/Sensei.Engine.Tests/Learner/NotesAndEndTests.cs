@@ -376,6 +376,8 @@ public sealed class NotesAndEndTests
     [InlineData("Check the Working Level next time")]
     [InlineData("see working_level")]
     [InlineData("WORKING_LEVEL")]
+    [InlineData("Try more N5 vocabulary next time")]
+    [InlineData("JLPT style listening practice")]
     public async Task S80_a_next_suggestion_that_mentions_the_working_level_is_invalid_arguments_with_hidden_level(string suggestion)
     {
         await using var t = await TestEngine.CreateAsync();
@@ -389,10 +391,9 @@ public sealed class NotesAndEndTests
     }
 
     [Theory]
-    [InlineData("Try more N5 vocabulary next time")]
     [InlineData("A working lunch phrase")]
-    [InlineData("JLPT style listening practice")]
-    public async Task S80_mentioning_jlpt_levels_in_general_stays_allowed(string suggestion)
+    [InlineData("Try another beginner word.")]
+    public async Task S80_ordinary_suggestions_stay_allowed(string suggestion)
     {
         await using var t = await TestEngine.CreateAsync();
         var r = await End(t, suggestion);

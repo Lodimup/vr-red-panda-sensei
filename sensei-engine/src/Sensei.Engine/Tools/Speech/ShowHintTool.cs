@@ -67,7 +67,7 @@ public sealed class ShowHintTool : SenseiTool<ShowHintArgs>
     public override string? ValidateArguments(ShowHintArgs args)
     {
         var c = args.Content;
-        if (PronunciationClaimGuard.Check(c.Japanese, c.Reading, c.Romaji, c.English, args.TargetKey))
+        if (args.Kind != "vocabulary_card" && PronunciationClaimGuard.Check(c.Japanese, c.Reading, c.Romaji, c.English, args.TargetKey))
             return PronunciationClaimGuard.Detail;
         if (string.IsNullOrEmpty(c.Japanese) && string.IsNullOrEmpty(c.Reading) && string.IsNullOrEmpty(c.Romaji) && string.IsNullOrEmpty(c.English))
             return "content: at least one of japanese, reading, romaji, english is required";
