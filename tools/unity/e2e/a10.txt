@@ -1,4 +1,6 @@
 wait_idle
-event help_repeat
+wav water
 interrupt_after_ms 1500 interrupt
+wait_idle
+repeat
 wait_idle

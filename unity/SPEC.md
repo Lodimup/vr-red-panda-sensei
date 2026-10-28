@@ -49,7 +49,7 @@ Anchor = a pose on the floor plane, placed at boot 0.9 m in front of the head al
 - **U21** Right trigger with the controller ray on a card → `PlayerSelect(id)`. Ray: line renderer from the right controller, 3 m, hits card colliders.
 - **U22** Right grip on a card → grab: card follows the controller. Release over a region zone (box colliders over each region's mat third, 0.30 m tall) → `PlayerMove(id, region, null)`; release over a container card → `PlayerMove(id, null, containerId)`; release elsewhere → snap back. Engine rejection → snap back plus a short buzz (haptic 0.1 s).
 - **U23** A (right) held = push-to-talk. Press: if Sensei is speaking or thinking, `CancelGeneration()` and `SpeechPlayer.StopAll(newGeneration)` first (interrupt, A22: playback silent within 300 ms); start `MicCapture.Begin()`. Release: `End()`, transcribe, then `RunTurnAsync(transcript)`. Holds shorter than 0.3 s or empty transcripts are discarded with `Didn't catch that` on the You line.
-- **U24** B (right) = Repeat: player event `help_repeat` (§6). X (left) = Hint: `help_hint`. Y (left) short press = toggle the menu panel (§7); long press 1 s = re-place the practice area.
+- **U24** B (right) = Repeat: replay the latest speech directly through `ReplayLastSpeechAsync`; if none exists, show “Nothing to repeat yet.” for 2 s. X (left) = Hint: `help_hint`. Y (left) short press = toggle the menu panel (§7); long press 1 s = re-place the practice area.
 - **U25** Left thumbstick click = Slower toggle: `SetPreferenceByPlayerAsync` pace `slow`/`normal`.
 
 ## 6 Player event turns (needs engine slice E1)

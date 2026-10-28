@@ -19,7 +19,7 @@ namespace Sensei.App
             trigger.performed += _ => { var button = pointer.HitButton(); if (button != null) button.Press?.Invoke(); else { var card = pointer.HitCard(); if (card != null) host.Select(card.InstanceId); } };
             grip.performed += _ => { grabbed = pointer.HitCard(); if (grabbed != null) grabbed.Dragging = true; };
             grip.canceled += _ => Release();
-            repeat.performed += context => { _ = host.EventTurn("help_repeat"); };
+            repeat.performed += context => { _ = host.Repeat(); };
             hint.performed += context => { _ = host.EventTurn("help_hint"); };
             replace.performed += _ => { yDown = Time.time; replaced = false; };
             replace.canceled += _ => { if (yDown >= 0 && !replaced) { if (Time.time - yDown >= 1) host.ReplaceArea(); else host.ToggleMenu(); } yDown = -1; };

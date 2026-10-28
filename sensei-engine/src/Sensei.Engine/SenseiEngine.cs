@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using Sensei.Engine.Agent;
 using Sensei.Engine.Events;
 using Sensei.Engine.Learner;
+using Sensei.Engine.Json;
+using Sensei.Engine.Tools.Speech;
 using Sensei.Engine.Storage;
 using Sensei.Engine.Tasks;
 using Sensei.Engine.Tools;
@@ -181,6 +183,45 @@ public sealed class SenseiEngine : IAsyncDisposable
                 return Task.FromResult(new TurnResult { TurnId = turnId, GenerationId = generation, Status = TurnStatuses.Failed, ErrorCode = "invalid_player_event" });
             }
             return RunGatedAsync(() => Task.FromResult(StartTurn($"(player event: {eventKind})", null, eventKind)), ct);
+        });
+
+    /// <summary>S142: replay the last speech directly, cancelling any running turn first.</summary>
+    public Task<ToolResult> ReplayLastSpeechAsync(string? pace = null, CancellationToken ct = default) =>
+        GuardAsync(nameof(ReplayLastSpeechAsync), async () =>
+        {
+            if (ct.IsCancellationRequested) return new ToolResult { Status = ToolStatuses.Cancelled, ErrorCode = ToolErrorCodes.Cancelled };
+            using var scope = _core.OpenNotificationScope();
+            long ticket;
+            lock (_turnGate) ticket = ++_turnTicket;
+            await CancelRunningTurnAsync().ConfigureAwait(false);
+            try { await _lifecycle.WaitAsync(ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return new ToolResult { Status = ToolStatuses.Cancelled, ErrorCode = ToolErrorCodes.Cancelled }; }
+            var settled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_turnGate)
+            {
+                if (ticket != _turnTicket) { _lifecycle.Release(); return new ToolResult { Status = ToolStatuses.Cancelled, ErrorCode = ToolErrorCodes.Cancelled }; }
+                _runningTurn = settled.Task;
+            }
+            var started = false;
+            try
+            {
+                lock (_core.Sync)
+                {
+                    if (_core.SpeechHistory.Latest is null) return new ToolResult { Status = ToolStatuses.Failure, ErrorCode = ToolErrorCodes.NothingToReplay, Detail = "nothing has been said yet", Tool = "replay_speech", Revision = _core.World.Revision };
+                }
+                _core.BeginTurnCore("(player repeat)", synthetic: true); started = true;
+                bool superseded;
+                lock (_turnGate) superseded = ticket != _turnTicket;
+                if (superseded) _core.CancelGeneration();
+                var arguments = System.Text.Json.JsonSerializer.Serialize(new ReplaySpeechArgs { Pace = pace }, SenseiJsonContext.Default.ReplaySpeechArgs);
+                return await _core.Pipeline.InvokeAsync("replay_speech", arguments, null, null, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                lock (_turnGate) _runningTurn = null;
+                _lifecycle.Release(); settled.TrySetResult(true);
+                if (started) { _core.FlushNotifications(); _core.Events.SenseiState(SenseiStates.Idle); }
+            }
         });
 
     /// <summary>S48, S99, S116: supersedes the latest learner utterance and its attempts, then runs a normal turn with the correction.</summary>

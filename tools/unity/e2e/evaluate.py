@@ -17,7 +17,10 @@ elif scenario == 'a10':
     before = [re.search(r'RPS_PLAY generation=(\d+)', line) for line in lines[:max(press, 0)]]
     old = next((m.group(1) for m in reversed(before) if m), None)
     stop = next((re.search(r'RPS_INTERRUPT was_playing=true stopped=true stopped_ms=(\d+)', line) for line in lines[press+1:] if 'RPS_INTERRUPT' in line), None) if press >= 0 else None
-    checks.update(interrupt_stopped=bool(stop and int(stop.group(1)) <= 300), no_old_playback=bool(old and not any(f'RPS_PLAY generation={old}' in line for line in lines[press+1:])), new_turn_completed=bool(press >= 0 and any('RPS_TURN status=completed' in line for line in lines[press+1:])))
+    repeat_step = next((i for i, line in enumerate(lines) if 'RPS_E2E step=4 wait_idle ok' in line), -1)
+    replay_lines = lines[repeat_step+1:] if repeat_step >= 0 else []
+    checks.update(replay_played=any('RPS_PLAY generation=' in line for line in replay_lines) and any('RPS_REPEAT ok' in line for line in replay_lines),
+                  interrupt_stopped=bool(stop and int(stop.group(1)) <= 300), no_old_playback=bool(old and not any(f'RPS_PLAY generation={old}' in line for line in lines[press+1:])), new_turn_completed=bool(press >= 0 and any('RPS_TURN status=completed' in line for line in lines[press+1:])))
 else:
     sessions = re.search(r'RPS_PROFILE sessions=(\d+)', log)
     texts = re.findall(r'RPS_SPEAK generation=\d+ lang=(?:ja|en) text=([^\r\n]*)', log)
