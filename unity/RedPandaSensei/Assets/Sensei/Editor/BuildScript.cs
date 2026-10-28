@@ -29,6 +29,7 @@ namespace Sensei.Editor
                 ConfigurePlayer();
                 ConfigureXr();
                 EnsureMaterials();
+                NotoFontAsset.Ensure();
                 EnsureBootScene();
                 AssetDatabase.SaveAssets();
                 Directory.CreateDirectory("Build");

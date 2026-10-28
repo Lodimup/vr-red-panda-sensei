@@ -85,6 +85,7 @@ namespace Sensei.Voice
                     clip.SetData(item.Audio.Samples, 0);
                     source.clip = clip;
                     source.Play();
+                    Debug.Log($"RPS_PLAY generation={item.Generation}");
                 }
             }
         }

@@ -5,7 +5,8 @@
     "Sensei.Runtime",
     "Unity.InputSystem",
     "Unity.TextMeshPro",
-    "Oculus.VR"
+    "Oculus.VR",
+    "Sensei.Voice"
   ],
   "overrideReferences": true,
   "precompiledReferences": [

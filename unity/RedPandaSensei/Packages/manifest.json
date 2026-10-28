@@ -40,6 +40,8 @@
     "com.unity.modules.xr": "1.0.0",
     "com.unity.xr.openxr": "1.19.0",
     "com.meta.xr.sdk.core": "207.0.1",
-    "com.unity.ugui": "2.6.0"
+    "com.unity.ugui": "2.6.0",
+    "com.supercapybara.sensei.voice": "file:../../packages/com.supercapybara.sensei.voice",
+    "com.supercapybara.sherpa-onnx": "file:../../packages/com.supercapybara.sherpa-onnx"
   }
 }
