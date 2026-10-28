@@ -103,16 +103,22 @@ internal sealed class SenseiAgent : IAgentRunner
 
         CancellationToken generationToken;
         string? interrupted = null;
+        string? interruptedEvent = null;
         lock (_core.Sync)
         {
             if (_core.CurrentGeneration != turn.GenerationId) return new TurnResult { TurnId = turn.TurnId, GenerationId = turn.GenerationId, Status = TurnStatuses.Cancelled };
             generationToken = _core.GenerationToken;
             if (request.PreviousTurnInterrupted)
-                interrupted = _core.Utterances.All.LastOrDefault(u => !u.IsSynthetic && u.TurnId < turn.TurnId)?.Text;
+            {
+                var previous = _core.Utterances.All.LastOrDefault(u => u.TurnId < turn.TurnId);
+                if (previous is { IsSynthetic: false }) interrupted = previous.Text;
+                else if (previous is { IsSynthetic: true } && previous.Text.StartsWith("(player event: ", StringComparison.Ordinal) && previous.Text.EndsWith(")", StringComparison.Ordinal))
+                    interruptedEvent = previous.Text.Substring(15, previous.Text.Length - 16);
+            }
         }
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, generationToken);
-        var scope = new TurnScope(request, linked.Token, _eventMark) { InterruptedTranscript = interrupted };
+        var scope = new TurnScope(request, linked.Token, _eventMark) { InterruptedTranscript = interrupted, InterruptedEventKind = interruptedEvent };
         _active = scope;
         string status;
         string? errorCode = null;
@@ -120,7 +126,7 @@ internal sealed class SenseiAgent : IAgentRunner
         try
         {
             _session ??= (ChatClientAgentSession)await _agent.CreateSessionAsync(linked.Token).ConfigureAwait(false);
-            PrepareHistory(_session);
+            PrepareHistory(_session, request.EventKind is not null);
             var learnerMessage = new ChatMessage(ChatRole.User, _renderer.RenderStoredLearnerMessage(scope));
             await _agent.RunAsync(learnerMessage, _session, null, linked.Token).ConfigureAwait(false);
             status = scope.BudgetExhausted ? TurnStatuses.BudgetExhausted : TurnStatuses.Completed;
@@ -152,11 +158,11 @@ internal sealed class SenseiAgent : IAgentRunner
     }
 
     /// <summary>S65: settle unanswered calls, make room so the incoming learner message is the 12th at most, and shrink what the finished turns left behind.</summary>
-    private void PrepareHistory(ChatClientAgentSession session)
+    private void PrepareHistory(ChatClientAgentSession session, bool isEvent)
     {
         var messages = _history!.GetMessages(session);
         HistorySettler.Settle(messages);
-        _history.SetMessages(session, HistoryCompactor.Compact(LearnerBoundaryReducer.Trim(messages, LearnerBoundaryReducer.MaxLearnerTurns - 1)));
+        _history.SetMessages(session, HistoryCompactor.Compact(LearnerBoundaryReducer.Trim(messages, LearnerBoundaryReducer.MaxLearnerTurns - (isEvent ? 0 : 1))));
     }
 
     private void RaiseState(TurnScope scope, string state)

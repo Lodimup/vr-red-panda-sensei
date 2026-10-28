@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Agent;
@@ -28,6 +29,9 @@ namespace Sensei.Engine;
 /// </summary>
 public sealed class SenseiEngine : IAsyncDisposable
 {
+    /// <summary>Supported player event kinds, in their public order.</summary>
+    public static IReadOnlyList<string> PlayerEventKinds { get; } = Array.AsReadOnly(new[] { "session_start", "help_hint", "help_repeat", "help_english", "area_placed" });
+
     private readonly EngineCore _core;
     private readonly IAgentRunner _runner;
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
@@ -165,6 +169,19 @@ public sealed class SenseiEngine : IAsyncDisposable
     /// <summary>S23, S68, S117: cancels a running turn and waits for it, starts a turn (utterance recorded first) and runs the agent.</summary>
     public Task<TurnResult> RunTurnAsync(string transcript, CancellationToken ct = default) =>
         GuardAsync(nameof(RunTurnAsync), () => RunGatedAsync(() => Task.FromResult(StartTurn(transcript ?? "", null)), ct));
+
+    /// <summary>Runs a synthetic player event through the normal turn gate.</summary>
+    public Task<TurnResult> RunPlayerEventTurnAsync(string eventKind, CancellationToken ct = default) =>
+        GuardAsync(nameof(RunPlayerEventTurnAsync), () =>
+        {
+            if (eventKind is null || !PlayerEventKinds.Contains(eventKind))
+            {
+                long turnId, generation;
+                lock (_core.Sync) { turnId = _core.CurrentTurnId; generation = _core.CurrentGeneration; }
+                return Task.FromResult(new TurnResult { TurnId = turnId, GenerationId = generation, Status = TurnStatuses.Failed, ErrorCode = "invalid_player_event" });
+            }
+            return RunGatedAsync(() => Task.FromResult(StartTurn($"(player event: {eventKind})", null, eventKind)), ct);
+        });
 
     /// <summary>S48, S99, S116: supersedes the latest learner utterance and its attempts, then runs a normal turn with the correction.</summary>
     public Task<TurnResult> CorrectLastTranscriptAsync(string correctedTranscript, CancellationToken ct = default) =>
@@ -486,10 +503,10 @@ public sealed class SenseiEngine : IAsyncDisposable
         return result;
     }
 
-    private Prepared StartTurn(string transcript, string? correctedFrom)
+    private Prepared StartTurn(string transcript, string? correctedFrom, string? eventKind = null)
     {
-        var turn = _core.BeginTurnCore(transcript, synthetic: false, correctedFrom);
-        return new Prepared { Request = new AgentTurnRequest(turn, transcript, correctedFrom, _previousTurnInterrupted) };
+        var turn = _core.BeginTurnCore(transcript, synthetic: eventKind is not null, correctedFrom);
+        return new Prepared { Request = new AgentTurnRequest(turn, transcript, correctedFrom, _previousTurnInterrupted, eventKind) };
     }
 
     /// <summary>S99: supersede the latest non-synthetic utterance and every attempt sourced from it, save, then start the turn.</summary>

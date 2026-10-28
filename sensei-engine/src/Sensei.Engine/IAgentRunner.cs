@@ -20,8 +20,9 @@ internal interface IAgentRunner
 /// <summary>Input of <see cref="IAgentRunner.RunTurnAsync"/>.</summary>
 internal sealed class AgentTurnRequest
 {
-    public AgentTurnRequest(TurnState turn, string transcript, string? correctedFrom, bool previousTurnInterrupted)
+    public AgentTurnRequest(TurnState turn, string transcript, string? correctedFrom, bool previousTurnInterrupted, string? eventKind = null)
     {
+        EventKind = eventKind;
         Turn = turn;
         Transcript = transcript;
         CorrectedFrom = correctedFrom;
@@ -32,6 +33,8 @@ internal sealed class AgentTurnRequest
     public TurnState Turn { get; }
 
     public string Transcript { get; }
+
+    public string? EventKind { get; }
 
     /// <summary>S48: when this turn corrects the previous transcript, the text it replaced.</summary>
     public string? CorrectedFrom { get; }
