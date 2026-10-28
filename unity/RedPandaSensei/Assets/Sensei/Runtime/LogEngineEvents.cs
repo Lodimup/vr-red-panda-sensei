@@ -11,16 +11,23 @@ namespace Sensei.Unity
 {
     public sealed class LogEngineEvents : IEngineEvents
     {
+        private readonly bool debugText;
+        private readonly string? secret;
+        public LogEngineEvents(bool debugText = false, string? secret = null)
+        {
+            this.debugText = debugText;
+            this.secret = secret;
+        }
         [Serializable] private sealed class JsonText { public string value = ""; }
-        private static string Quote(string? value)
+        private string Quote(string? value)
         {
             if (value == null) return "null";
-            var json = JsonUtility.ToJson(new JsonText { value = value });
+            var json = JsonUtility.ToJson(new JsonText { value = LogSpeechOutput.Redact(value, secret) });
             return json.Substring(9, json.Length - 10);
         }
-        private static void Log(string method, string json)
+        private void Log(string method, string json)
         {
-            Debug.Log($"RPS_EVENT {method} {json.Replace('\n', ' ').Replace('\r', ' ')}");
+            Debug.Log(debugText ? $"RPS_EVENT {method} {LogSpeechOutput.Redact(json, secret).Replace('\n', ' ').Replace('\r', ' ')}" : $"RPS_EVENT {method}");
         }
 
         public void OnSceneChanged(SceneEvent e, SceneSnapshot scene) => Log(nameof(OnSceneChanged),

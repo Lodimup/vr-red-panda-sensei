@@ -36,14 +36,14 @@ namespace Sensei.App
         {
             try
             {
-                var env = SenseiEnvFile.Load(Path.Combine(path, "sensei.env")); env.TryGetValue("SENSEI_LLM_API_KEY", out var key);
+                var env = SenseiEnvFile.Load(Path.Combine(path, "sensei.env")); env.TryGetValue("SENSEI_LLM_API_KEY", out var key); env.TryGetValue("RPS_DEBUG_TEXT", out var debugText);
                 Report("RPS_BOOT step=1 ok");
                 for (var i = 2; i <= 4; i++) Report($"RPS_BOOT step={i} ok voice_deferred");
                 var events = new UnityEngineEvents(queue, area, sensei, pace => slow = pace == "slow");
                 var created = await Task.Run(async () =>
                 {
                     var client = string.IsNullOrWhiteSpace(key) ? null : ChatClientFactory.Create(LlmSettings.FromEnvironment(env));
-                    return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = new LogSpeechOutput(), Events = events, ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
+                    return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = new LogSpeechOutput(debugText == "1", key), Events = events, ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
                 });
                 engine = created; hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
                 if (string.IsNullOrWhiteSpace(key)) { Report("No API key. Push sensei.env (see README)."); return; }
