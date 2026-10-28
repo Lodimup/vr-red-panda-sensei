@@ -8,7 +8,7 @@ turns = re.findall(r'RPS_TURN status=(\w+).*?tools=([^\r\n]*)', log)
 if scenario == 'a01':
     checks.update(completed_turns=sum(status == 'completed' for status, _ in turns) >= 3,
                   mixed_language_speak=any('ja' in m.split(',') and 'en' in m.split(',') for m in re.findall(r'RPS_SPEAK_GROUP generation=\d+ langs=([a-z,]+)', log)),
-                  challenge=any('start_challenge' in tools for _, tools in turns),
+                  challenge=bool(re.search(r'RPS_EVENT OnSceneChanged kind=task_started\b', log)),
                   attempt=any('record_attempt' in tools for _, tools in turns),
                   no_failed_turn=not re.search(r'RPS_TURN (?:status=failed|failed)', log))
 elif scenario == 'a10':
@@ -29,7 +29,11 @@ else:
                   returning_greeting=any(re.search(r'\b(back|again|continue|return|welcome back|previous|review)\b|おかえり|前回|続き|復習', t, re.I) for t in texts))
 capture = json.loads((out / 'capture.json').read_text())
 checks['video_recorded'] = (out / 'clip.mp4').stat().st_size > 0
+request = re.search(r'RPS_E2E step=8 wav ok[^\n]*\n(.*?)(?:RPS_E2E step=9 wait_idle (?:ok|fail)|\Z)', log, re.S) if scenario == 'a01' else None
+task_completed_on_request = bool(request and re.search(r'RPS_EVENT OnSceneChanged kind=task_completed\b', request.group(1)))
 summary = {'capture': f"frame capture, ~{capture['fps']:.1f} fps", 'scenario': scenario, 'pass': all(checks.values()), 'checks': checks, 'completed_turns': sum(s == 'completed' for s, _ in turns)}
+if scenario == 'a01':
+    summary['task_completed_on_request'] = task_completed_on_request
 (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
 print(json.dumps(summary, indent=2))
 sys.exit(0 if summary['pass'] else 1)
