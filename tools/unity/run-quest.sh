@@ -91,7 +91,7 @@ try:
             line = raw.decode('utf-8', errors='replace').rstrip('\r')
             if 'RPS_' not in line: continue
             print(line, flush=True)
-            if 'RPS_BOOT fail' in line or 'RPS_BOOT step=7 fail' in line or 'RPS_TURN failed' in line: sys.exit(1)
+            if re.search(r'RPS_BOOT (?:step=\d+ )?fail', line) or 'RPS_TURN failed' in line: sys.exit(1)
             if 'RPS_BOOT step=7 ok' in line: booted = True
             if 'RPS_TURN status=' in line:
                 if 'RPS_TURN status=completed ' not in line: sys.exit(1)
