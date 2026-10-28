@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.1
+
+- Queued repeat is cancelled when pausing.
+- Sensei starts speaking sooner by generating voice sentence by sentence. Median time to first word on device fell from 10.2 seconds to about 9.2 seconds in the measured runs.
+- Turn timing logs capture latency across the conversation pipeline.
+
 ## v0.1.0
 
 - Practice Japanese with a mixed-reality red panda companion and interactive tabletop objects on Quest.
