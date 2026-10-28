@@ -77,6 +77,8 @@ public sealed class RecordAttemptTool : SenseiTool<RecordAttemptArgs>
 
     public override string? ValidateArguments(RecordAttemptArgs args)
     {
+        if (PronunciationClaimGuard.Check(args.Target.Key, args.Target.Japanese, args.TranscriptExcerpt, args.Note, args.TaskId))
+            return PronunciationClaimGuard.Detail;
         // S95: a listening attempt must cite events; every other dimension needs the learner's words.
         if (args.Target.Dimension == SkillDimensions.Listening)
             return args.EventIds.Count == 0 ? ListeningRequiresPlayerEventsDetail : null;
