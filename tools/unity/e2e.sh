@@ -25,6 +25,11 @@ rm -f "$out/clip.mp4" "$out/logcat.txt" "$out/summary.json" "$out/verdict.txt"
 package=com.supercapybara.redpandasensei
 files="/sdcard/Android/data/$package/files"
 cleanup() {
+  if [[ -n ${logger:-} ]]; then kill "$logger" 2>/dev/null || true; fi
+  if [[ -n ${recorder:-} ]] && kill -0 "$recorder" 2>/dev/null; then
+    if [[ ${record_mode:-screenrecord} == screenrecord ]]; then "${adb_device[@]}" shell pkill -INT screenrecord >/dev/null 2>&1 || true; else kill -INT "$recorder" 2>/dev/null || true; fi
+    wait "$recorder" 2>/dev/null || true
+  fi
   if [[ ${RPS_KEEP_AWAKE:-0} == 1 ]]; then return; fi
   "${adb_device[@]}" shell setprop debug.oculus.guardian_pause 0 >/dev/null 2>&1 || true
   "${adb_device[@]}" shell am broadcast -a com.oculus.vrpowermanager.automation_disable >/dev/null 2>&1 || true
