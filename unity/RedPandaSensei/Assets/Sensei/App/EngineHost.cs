@@ -25,7 +25,7 @@ namespace Sensei.App
         [SerializeField] private TMP_FontAsset? panelFont;
         internal Action repeatBeforeEngine = () => { };
         private CancellationTokenSource pauseCts = new CancellationTokenSource();
-        private int pauseEpoch; private Func<Func<Task<Sensei.Engine.Tools.ToolResult>>, Task<Sensei.Engine.Tools.ToolResult>> repeatScheduler = work => Task.Run(work);
+        private bool paused; private int pauseEpoch; private Func<Func<Task<Sensei.Engine.Tools.ToolResult>>, Task<Sensei.Engine.Tools.ToolResult>> repeatScheduler = work => Task.Run(work);
         private int finishedTurns; private int hintShownAt = -1; private string? logKey;
         private StatusPanel statusPanel = null!; private TaskCard taskCard = null!; private HintCard hintCard = null!; private MenuPanel menu = null!;
         public string ModelStatus { get; private set; } = "no key"; public string VoiceStatus => speech != null ? "ready" : "not loaded"; public string RecognizerStatus => recognizer != null ? "ready" : "not loaded";
@@ -200,7 +200,7 @@ namespace Sensei.App
             finally { changingPace = false; }
         }
         private void Update() => queue.Drain();
-        private void OnApplicationPause(bool paused) { if (paused) { Interlocked.Increment(ref pauseEpoch); pauseCts.Cancel(); pushToTalk?.CancelCapture(); InterruptSpeech(); } else { pauseCts = new CancellationTokenSource(); } }
+        private void OnApplicationPause(bool isPaused) { if (isPaused) { paused = true; Interlocked.Increment(ref pauseEpoch); pauseCts.Cancel(); pushToTalk?.CancelCapture(); InterruptSpeech(); } else if (paused) { paused = false; pauseCts = new CancellationTokenSource(); } }
         private void OnApplicationQuit() => Shutdown();
         private void OnDestroy() => Shutdown();
         private async void Shutdown()
