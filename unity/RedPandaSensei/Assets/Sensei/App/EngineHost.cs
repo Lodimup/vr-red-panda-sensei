@@ -23,7 +23,7 @@ namespace Sensei.App
     {
         private readonly MainThreadQueue queue = new MainThreadQueue(); private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private string? voiceFailure;
-        private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey;
+        private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey; private bool destroyed;
         private void Start()
         {
             var rig = FindFirstObjectByType<OVRCameraRig>();
@@ -52,8 +52,10 @@ namespace Sensei.App
                 if (ttsDir != null && asrDir != null) Report("RPS_BOOT step=2 ok");
                 try { if (ttsDir == null) throw new IOException(); tts = await LocalTts.LoadAsync(ttsDir); await tts.SynthesizeAsync("あ", "ja", 1f, lifetime.Token); speech = new LocalSpeechOutput(tts, player!, queue); speech.SegmentStarted += segment => captions!.Show(segment, speech.CurrentCaptions); speech.UtteranceEnded += () => captions!.End(); Report("RPS_BOOT step=3 ok"); }
                 catch (Exception e) { voiceFailure = "Supertonic voice could not be loaded."; Report("RPS_BOOT step=3 fail Supertonic " + e.GetType().Name); }
+                if (destroyed) { tts?.Dispose(); return; }
                 try { if (asrDir == null) throw new IOException(); recognizer = await SenseVoiceRecognizer.LoadAsync(asrDir, useItn: false); Report("RPS_BOOT step=4 ok"); }
                 catch (Exception e) { voiceFailure = (voiceFailure == null ? "" : voiceFailure + "\n") + "SenseVoice-nano could not be loaded."; Report("RPS_BOOT step=4 fail SenseVoice-nano " + e.GetType().Name); }
+                if (destroyed) { tts?.Dispose(); recognizer?.Dispose(); return; }
                 env.TryGetValue("RPS_TEST_AUDIO", out var testAudio); env.TryGetValue("RPS_TEST_PTT_SECONDS", out var testSeconds); env.TryGetValue("RPS_TEST_INTERRUPT_MS", out var testInterrupt);
                 pushToTalk = gameObject.AddComponent<PushToTalk>(); pushToTalk.Initialize(this, sensei, you, recognizer, testAudio, debugText == "1", key);
                 var events = new UnityEngineEvents(queue, area, sensei, pace => slow = pace == "slow");
@@ -62,7 +64,8 @@ namespace Sensei.App
                     var client = string.IsNullOrWhiteSpace(key) ? null : ChatClientFactory.Create(LlmSettings.FromEnvironment(env));
                     return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = (ISpeechOutput?)speech ?? new UnavailableSpeechOutput(), Events = events, ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
                 });
-                engine = created; hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
+                if (destroyed) { await created.DisposeAsync(); return; }
+                engine = created; hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); if (destroyed) return; area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
                 if (string.IsNullOrWhiteSpace(key)) { Report("No API key. Push sensei.env (see README)." + (voiceFailure == null ? "" : "\n" + voiceFailure)); return; }
                 var greeting = EventTurn("session_start");
                 if (float.TryParse(testSeconds, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds) || !string.IsNullOrEmpty(testAudio) || !string.IsNullOrEmpty(testInterrupt)) { int.TryParse(testInterrupt, out var interruptMs); pushToTalk.StartTest(seconds, interruptMs); }
@@ -75,7 +78,7 @@ namespace Sensei.App
                     Debug.Log($"RPS_TEST_TURN status={testResult.Status}");
                 }
             }
-            catch (Exception error) { Report($"RPS_BOOT fail type={error.GetType().Name}"); }
+            catch (Exception error) { if (!destroyed) Report($"RPS_BOOT fail type={error.GetType().Name}"); }
         }
         public async Task<bool> EventTurn(string kind)
         {
@@ -132,6 +135,16 @@ namespace Sensei.App
             finally { changingPace = false; }
         }
         private void Update() => queue.Drain();
-        private async void OnDestroy() { lifetime.Cancel(); if (engine != null) await engine.DisposeAsync(); tts?.Dispose(); recognizer?.Dispose(); lifetime.Dispose(); }
+        private void OnApplicationQuit() => Shutdown();
+        private void OnDestroy() => Shutdown();
+        private async void Shutdown()
+        {
+            if (destroyed) return;
+            destroyed = true; ready = false;
+            var current = engine; engine = null;
+            current?.CancelGeneration(); lifetime.Cancel(); speech?.Interrupt();
+            if (current != null) await current.DisposeAsync();
+            tts?.Dispose(); recognizer?.Dispose();
+        }
     }
 }
