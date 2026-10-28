@@ -12,7 +12,7 @@ Authority: this file + `sensei-engine/SPEC.md`. The PRD (`docs/prd/`) is backgro
 
 ## 1 Boot
 
-- **U1** Boot order, each step shows a line on the status panel: (1) load `sensei.env` from `Application.persistentDataPath` (keys as engine SPEC §2); (2) install voice models (`VoiceModelInstaller`); (3) load `LocalTts`, warm it with one 1-character synth; (4) load recognizer (TBD route); (5) `SenseiEngine.CreateAsync` with `FileProfileStore(persistentDataPath/profiles)`, `ProfileId "default"`; (6) place the practice area (§2); (7) run the session-start turn (§6, U40).
+- **U1** Boot order, each step shows a line on the status panel: (1) load `sensei.env` from `Application.persistentDataPath` (keys as engine SPEC §2); (2) install voice models (`VoiceModelInstaller`); (3) load `LocalTts`, warm it with one 1-character synth; (4) load the SenseVoice-nano recognizer (U31); (5) `SenseiEngine.CreateAsync` with `FileProfileStore(persistentDataPath/profiles)`, `ProfileId "default"`; (6) place the practice area (§2); (7) run the session-start turn (§6, U40).
 - **U2** Missing key: the app still boots, scene and voice work, the status panel shows `No API key. Push sensei.env (see README).` and talk is disabled with that message. Never crash on missing models: show which model failed.
 - **U3** The key is never logged, displayed, or written anywhere by the app.
 
@@ -66,13 +66,13 @@ Engine slice E1 (separate, engine repo): `Task<TurnResult> RunPlayerEventTurnAsy
 
 ## 8 Speech output (`LocalSpeechOutput : ISpeechOutput`)
 
-- **U28** For each segment in order: `LocalTts.SynthesizeAsync(text, lang, speed)` where speed = 1.0 for `normal`, TBD for `slow` (from u0v); then `SpeechPlayer.PlayAsync`. Synthesis of segment k+1 starts while k plays. Captions show segment k while it plays.
+- **U28** For each segment in order: `LocalTts.SynthesizeAsync(text, lang, speed)` where speed = 1.0 for `normal`, 0.8 for `slow` (u0v: Supertonic 3 on Quest RTF ~1.0, warm synth 2-4 s per phrase, 2 threads); then `SpeechPlayer.PlayAsync`. Synthesis of segment k+1 starts while k plays. Captions show segment k while it plays.
 - **U29** Returns `completed` when all played, `cancelled` if the token fires or the generation goes stale, `failed` on synthesis error (logged with the segment language and length only).
 - **U30** Cache: last 64 (text, lang, speed) clips in memory.
 
 ## 9 Speech input
 
-- **U31** Route: TBD after u0v (SenseVoice on-device or OpenRouter audio model). Recognizer failures show `Couldn't hear that (network)` / `(error)` and do not call the engine.
+- **U31** Route (measured 2026-10-28, u0v report): on-device sherpa-onnx `sherpa-onnx-sense-voice-funasr-nano-int8-2025-12-17` through `SenseVoiceRecognizer`, ITN off. Quest mic CER ja 0.087, en 0.107, mixed 0.447, p50 ~420 ms; no network, no key. OpenRouter audio models were slower (1-3 s) and no better on Japanese. The classic SenseVoice model is not shipped. Recognizer failures show `Couldn't hear that` and do not call the engine. Mixed-language utterances are the weak spot: the engine already tolerates paraphrase and asks to clarify (A08).
 
 ## 10 Failure display
 
