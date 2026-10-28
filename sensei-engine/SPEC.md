@@ -373,6 +373,7 @@ These stories were added after an adversarial review of this spec. **Where one o
 - **S78** (replaces S56) Credential pattern, case-insensitive: `sk-[a-z0-9_-]{16,}`; or `(api[_-]?key|password|passwd|token|secret)\s*[:=]\s*\S{6,}`; or a run of 32 or more characters from `[A-Za-z0-9+/_=-]` that contains at least one letter **and** at least one digit. Ordinary words (`password`, `API key`, `antidisestablishmentarianism`, `今日はpasswordという単語を練習したい`) do not match.
 - **S79** (S4–S6) Base URL must be an absolute `https` URL with no userinfo, query or fragment; `http` is allowed only for host `localhost`, `127.0.0.1` or `[::1]`. Anything else → `LlmConfigurationException` before a client is created. `ToString()` redacts the key from every field. Validation order: provider, base URL, key.
 - **S80** (§9 hidden level) The hidden level is excluded from typed learner-facing data (S55 summary, hint cards built by the engine). For model-written text, any presentation string (`speak` text, `show_hint` content, `next_suggestion`) containing `working level` or `working_level` (case-insensitive) → `invalid_arguments` with detail `hidden_level`. Mentioning JLPT levels in general (for example "this is N5 vocabulary") stays allowed; the system prompt forbids telling the learner their own level.
+  The same guard applies to challenge instruction `japanese` and `english` in `start_challenge` and `update_challenge`, and to `start_challenge` `role`, each `scenario_properties[].value`, and each `skill_targets[].japanese`. Refusal leaves state unchanged.
 
 ### Pipeline
 
