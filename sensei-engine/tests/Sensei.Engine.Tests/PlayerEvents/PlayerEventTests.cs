@@ -34,7 +34,7 @@ public sealed class PlayerEventTests
         var chat = new ScriptedChatClient();
         await using var t = await EngineAsync(chat);
         Assert.Equal("completed", (await t.Engine.RunPlayerEventTurnAsync(kind)).Status);
-        Assert.Contains($"Player event: {kind}. {meaning}", LearnerBlock(chat.Requests[0]));
+        Assert.Contains($"- player event this turn: {kind}. {meaning}", chat.Requests[0].Options!.Instructions); Assert.DoesNotContain(meaning, LearnerBlock(chat.Requests[0]));
         Assert.DoesNotContain("learner_transcript:", LearnerBlock(chat.Requests[0]));
         Assert.Equal("nothing_to_correct", (await t.Engine.CorrectLastTranscriptAsync("x")).ErrorCode);
     }
@@ -78,7 +78,7 @@ public sealed class PlayerEventTests
         var chat = new ScriptedChatClient();
         var result = await InProcessCli.ScriptAsync(new[] { "/help", "/event session_start" }, chat);
         Assert.Contains("/event <kind>", result.Text);
-        Assert.Contains("Player event: session_start.", LearnerBlock(chat.Requests[0]));
+        Assert.Contains("- player event this turn: session_start. The learner just started a session and placed the practice area.", chat.Requests[0].Options!.Instructions); Assert.DoesNotContain("player event", LearnerBlock(chat.Requests[0]));
         Assert.Contains("completed", result.Text);
     }
 }

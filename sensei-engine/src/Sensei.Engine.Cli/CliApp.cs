@@ -345,6 +345,10 @@ internal sealed class CliApp
                 _llmError = true;
                 _output.Line("error: " + (_configError ?? LlmSettings.ApiKeyVariable + " is not set"));
                 break;
+            case "invalid_player_event":
+                _usageError = true;
+                _output.Line($"error: {result.ErrorCode}: {Clean(result.ErrorDetail)}");
+                break;
             case TurnErrorCodes.NothingToCorrect:
                 // S110 lists exactly what exits 1 and what exits 2; a correction with nothing to correct is neither, so it is reported and exits 0.
                 _output.Line($"error: {result.ErrorCode}: {Clean(result.ErrorDetail)}");

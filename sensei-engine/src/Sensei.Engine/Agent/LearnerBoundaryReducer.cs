@@ -30,7 +30,7 @@ internal sealed class LearnerBoundaryReducer : IChatReducer
     {
         var learnerIndexes = new List<int>();
         for (var i = 0; i < messages.Count; i++)
-            if (messages[i].Role == ChatRole.User) learnerIndexes.Add(i);
+            if (messages[i].Role == ChatRole.User && messages[i].Text != "<learner_data>\n</learner_data>") learnerIndexes.Add(i);
         if (learnerIndexes.Count <= keepLearnerMessages) return messages.ToList();
         var start = keepLearnerMessages <= 0 ? messages.Count : learnerIndexes[learnerIndexes.Count - keepLearnerMessages];
         return messages.Skip(start).ToList();

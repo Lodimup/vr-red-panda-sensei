@@ -75,10 +75,11 @@ internal sealed class ContextRenderer
         var containsJapanese = Sensei.Engine.Text.TextRules.ContainsJapanese(scope.Request.Transcript);
         var sb = new StringBuilder();
         sb.AppendLine("## Current state (engine-owned, refreshed before every model request)");
+        if (scope.Request.EventKind is { } kind) sb.AppendLine($"- player event this turn: {kind}. {EventMeaning(kind)}");
         sb.AppendLine($"- tool calls remaining this turn: {callsLeft.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine($"- model rounds remaining after this request: {roundsLeft.ToString(CultureInfo.InvariantCulture)}");
-        sb.AppendLine(round == 1 && scope.Request.EventKind == "area_placed"
-            ? "- this is the first request of the turn: respond only if something needs saying."
+        sb.AppendLine(round == 1 && scope.Request.EventKind is not null
+            ? "- this is the first request of a player-event turn: do what the player event asks, all in this one response. Speak only if it calls for speech."
             : round == 1
             ? "- this is the first request of the turn: `speak` first, then every call you can already make, all in this one response."
             : "- the results of your earlier calls are in the conversation above. Make only the calls that still depend on them; if none do, finish now with no tool calls and no text. Do not repeat anything you already said this turn.");
@@ -100,7 +101,9 @@ internal sealed class ContextRenderer
     /// Everything else in <see cref="RenderLearnerMessage"/> is rebuilt for each request and never persisted.
     /// </summary>
     public string RenderStoredLearnerMessage(TurnScope scope) =>
-        WrapBlock(new[] { $"learner_transcript: {Safe(scope.Request.Transcript)}" });
+        scope.Request.EventKind is null
+            ? WrapBlock(new[] { $"learner_transcript: {Safe(scope.Request.Transcript)}" })
+            : WrapBlock(System.Array.Empty<string>());
 
     /// <summary>
     /// S76: the user message of one request — one delimited block holding the transcript, the correction note, the interruption
@@ -119,10 +122,9 @@ internal sealed class ContextRenderer
         {
             lines.Add("previous_turn: it was interrupted before it finished");
             if (scope.InterruptedTranscript is not null) lines.Add($"interrupted_learner_transcript: {Safe(scope.InterruptedTranscript)}");
+            if (scope.InterruptedEventKind is not null) lines.Add($"interrupted_player_event: {scope.InterruptedEventKind}");
         }
-        lines.Add(request.EventKind is null
-            ? $"learner_transcript: {Safe(request.Transcript)}"
-            : $"Player event: {request.EventKind}. {EventMeaning(request.EventKind)}");
+        if (request.EventKind is null) lines.Add($"learner_transcript: {Safe(request.Transcript)}");
 
         List<string> events;
         Dictionary<string, string>? notes = null;

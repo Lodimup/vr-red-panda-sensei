@@ -486,10 +486,12 @@ These stories were added after an adversarial review of this spec. **Where one o
 
 - **S135** `public Task<TurnResult> RunPlayerEventTurnAsync(string eventKind, CancellationToken ct = default)` on `SenseiEngine`. Allowed kinds, exactly: `session_start`, `help_hint`, `help_repeat`, `help_english`, `area_placed` (public static `SenseiEngine.PlayerEventKinds`, in this order). Any other value (including null/empty) → returns `TurnResult` with status `failed`, error_code `invalid_player_event`, no model request, no utterance, no state change.
 - **S136** It runs through the same gate as `RunTurnAsync` (cancels and waits for a running turn, S23/S68/S117), same budgets, tools, cancellation, error codes and `TurnResult` shape. The learner utterance it records has transcript `(player event: <kind>)` and is **synthetic** (S92): never an excerpt source (S93), never targeted by `CorrectLastTranscriptAsync` (S99), never a learner turn for `LearnerBoundaryReducer` other than as a history boundary.
-- **S137** In the per-turn context (S63) the learner-transcript line is replaced by `Player event: <kind>. <meaning>` with these meanings, verbatim:
+- **S137** In the per-turn context (S63), event meaning is the first bullet of the engine-owned current state: `- player event this turn: <kind>. <meaning>`; the learner-data block contains no transcript or event meaning. The first request directs the model to do what the event asks in one response and speak only if called for; later rounds are unchanged. Meanings, verbatim:
   - session_start: `The learner just started a session and placed the practice area. Greet them. For a new profile, ask what Japanese they already know. For a returning learner, offer to continue from their review targets.`
   - help_hint: `The learner pressed the Hint button. Give one hint for the active task with show_hint, or a useful phrase if there is no task.`
   - help_repeat: `The learner pressed the Repeat button. Replay your last utterance with replay_speech.`
   - help_english: `The learner asked for an English explanation of what is happening right now.`
   - area_placed: `The learner moved the practice area. The scene did not change. Do not respond unless something needs saying.`
 - **S138** CLI: `/event <kind>` runs `RunPlayerEventTurnAsync` and prints the turn like a normal turn; `/help` lists it.
+
+- **S139** Synthetic events remain history boundaries without consuming the 12-learner-turn allowance. An interrupted event is identified as `interrupted_player_event: <kind>`, never attributed to an older learner utterance. A missing or unknown `/event` kind is a usage error with exit code 1.
