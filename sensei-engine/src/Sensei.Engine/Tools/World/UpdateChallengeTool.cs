@@ -3,6 +3,7 @@ using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Json;
+using Sensei.Engine.Learner;
 using Sensei.Engine.Tasks;
 
 namespace Sensei.Engine.Tools.World;
@@ -90,7 +91,10 @@ public sealed class UpdateChallengeTool : SenseiTool<UpdateChallengeArgs>
 
     protected override JsonTypeInfo<UpdateChallengeArgs> ArgsTypeInfo => SenseiJsonContext.Default.UpdateChallengeArgs;
 
-    public override string? ValidateArguments(UpdateChallengeArgs args) => TaskValidator.ValidateShape(args.Instruction, args.Predicates, instructionRequired: false);
+    public override string? ValidateArguments(UpdateChallengeArgs args) =>
+        HiddenLevelGuard.Check(args.Instruction?.Japanese) || HiddenLevelGuard.Check(args.Instruction?.English)
+            ? HiddenLevelGuard.Detail
+            : TaskValidator.ValidateShape(args.Instruction, args.Predicates, instructionRequired: false);
 
     public override IEnumerable<string> ReferencedInstanceIds(UpdateChallengeArgs args) => TaskValidator.ReferencedIds(args.Predicates);
 
