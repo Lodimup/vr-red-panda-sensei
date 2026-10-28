@@ -44,7 +44,7 @@ namespace Sensei.App
         }
         public async Task<SpeechOutcome> SpeakAsync(SpeechRequest request, CancellationToken ct)
         {
-            int presented = 0; bool stopped = false; var id = request.GenerationId; var latency = TurnLatency.Active;
+            int presented = 0; int segmentIndex = 0; bool stopped = false; var id = request.GenerationId; var latency = TurnLatency.Active;
             if (debugText) Debug.Log($"RPS_SPEAK_GROUP generation={id} langs=" + string.Join(",", System.Linq.Enumerable.Select(request.Segments, segment => segment.Lang)));
             lock (gate)
             {
@@ -56,7 +56,7 @@ namespace Sensei.App
             {
                 var chunks = SpeechChunker.Split(request.Segments);
                 var played = await SpeechPipeline.PlayAsync(chunks,
-                    chunk => Synthesize(chunk, speed, ct),
+                    chunk => { segmentIndex = chunk.SegmentIndex; return Synthesize(chunk, speed, ct); },
                     async (chunk, audio) =>
                     {
                         var outcome = await player.PlayAsync(audio, id, ct, () =>
@@ -80,7 +80,7 @@ namespace Sensei.App
                 return new SpeechOutcome(SpeechStatuses.Completed, null, presented);
             }
             catch (OperationCanceledException) { return new SpeechOutcome(SpeechStatuses.Cancelled, null, presented); }
-            catch (Exception) { var segment = request.Segments[Math.Min(presented, request.Segments.Count - 1)]; Debug.LogError($"RPS_SPEAK failed lang={segment.Lang} chars={segment.Text.Length}"); return new SpeechOutcome(SpeechStatuses.Failed, "synthesis failed", presented); }
+            catch (Exception) { var segment = request.Segments[Math.Min(segmentIndex, request.Segments.Count - 1)]; Debug.LogError($"RPS_SPEAK failed lang={segment.Lang} chars={segment.Text.Length}"); return new SpeechOutcome(SpeechStatuses.Failed, "synthesis failed", presented); }
             finally { queue.Post(() => { if (Current(id, ct)) UtteranceEnded?.Invoke(); }); }
         }
     }
