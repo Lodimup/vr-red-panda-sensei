@@ -13,8 +13,7 @@ namespace Sensei.Engine.Agent;
 /// a tool result shrinks to what a later turn can still use (status, error code, detail, affected ids), because the
 /// data a call returned (the scene, the learner profile, a task's full view) is in the current state or can be asked
 /// for again. The learner messages, the assistant's tool calls with their arguments (what Sensei said and did), the
-/// assistant's own text (S130 sends what the provider answered back to it, cleaned) and the one-result-per-call
-/// pairing (S65, S85) stay.
+/// one-result-per-call pairing (S65, S85) stay; assistant text is not in history at all (S129).
 /// </summary>
 internal static class HistoryCompactor
 {
