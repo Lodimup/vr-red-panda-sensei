@@ -48,4 +48,6 @@ internal sealed class TurnScope
 
     /// <summary>The text of the interrupted previous turn, when there was one (S63).</summary>
     public string? InterruptedTranscript { get; set; }
+
+    public string? InterruptedEventKind { get; set; }
 }
