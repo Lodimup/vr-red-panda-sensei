@@ -21,8 +21,8 @@ namespace Sensei.Engine.Llm;
 /// walked by the same iterative sanitizer the wire guard uses (<see cref="OutboundGuard"/>: at most <see cref="OutboundGuard.MaxValues"/>
 /// values in all, every string value and property name cleaned after unescaping, JSON held in a string treated as a string). A JSON
 /// element or node inside such a value is walked node by node (<see cref="JsonRedaction.WriteJsonTree"/>), never printed to text first.
-/// A value whose JSON needed cleaning reaches the client as the cleaned JSON element; every string of a message (text, ids, names, author)
-/// is cleaned as text; messages with nothing to clean are passed on as they are. Every text value handed over (each text content, and the
+/// A value whose JSON needed cleaning reaches the client as the cleaned JSON element; every string of a message (text, names, author)
+/// is cleaned as text and a call id loses only a known secret, by replacement (S133); messages with nothing to clean are passed on as they are. Every text value handed over (each text content, and the
 /// instructions) is one value of the same budget, so the cap is for the whole request. A value that cannot be written, or a request over
 /// the cap, is not passed on: <see cref="OutboundRejectedException"/>.
 /// </summary>
@@ -34,11 +34,16 @@ namespace Sensei.Engine.Llm;
 internal sealed class SerializedRequestGuard : DelegatingChatClient
 {
     private readonly Secrets _secrets;
+    private readonly Func<string>? _engineCallId;
 
-    public SerializedRequestGuard(IChatClient inner, Secrets secrets)
+    /// <param name="inner">The host's client.</param>
+    /// <param name="secrets">The known secrets the engine removes from everything it hands over.</param>
+    /// <param name="engineCallId">Hands out an id of the engine's own for a call id that holds a known secret (S133); null counts for itself.</param>
+    public SerializedRequestGuard(IChatClient inner, Secrets secrets, Func<string>? engineCallId = null)
         : base(inner)
     {
         _secrets = secrets;
+        _engineCallId = engineCallId;
     }
 
     public override Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
@@ -68,11 +73,12 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
     private List<ChatMessage> Guarded(IEnumerable<ChatMessage> messages, ref int budget)
     {
         var source = messages as List<ChatMessage> ?? messages.ToList();
+        var ids = new CallIdRewriter(_secrets, _engineCallId, () => CallIdRewriter.IdsIn(source));
         var result = new List<ChatMessage>(source.Count);
         var anyChanged = false;
         foreach (var message in source)
         {
-            var guarded = GuardedMessage(message, ref budget);
+            var guarded = GuardedMessage(message, ref budget, ids);
             anyChanged |= !ReferenceEquals(guarded, message);
             result.Add(guarded);
         }
@@ -85,13 +91,13 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
         if (--budget < 0) throw new OutboundRejectedException(OutboundRejectedException.TooManyValues);
     }
 
-    private ChatMessage GuardedMessage(ChatMessage message, ref int budget)
+    private ChatMessage GuardedMessage(ChatMessage message, ref int budget, CallIdRewriter ids)
     {
         var changed = false;
         var contents = new List<AIContent>(message.Contents.Count);
         foreach (var content in message.Contents)
         {
-            var guarded = GuardedContent(content, ref budget);
+            var guarded = GuardedContent(content, ref budget, ids);
             changed |= !ReferenceEquals(guarded, content);
             contents.Add(guarded);
         }
@@ -102,7 +108,7 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
         return new ChatMessage(message.Role, contents) { AuthorName = author, MessageId = id, CreatedAt = message.CreatedAt };
     }
 
-    private AIContent GuardedContent(AIContent content, ref int budget)
+    private AIContent GuardedContent(AIContent content, ref int budget, CallIdRewriter ids)
     {
         switch (content)
         {
@@ -114,7 +120,7 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
             }
             case FunctionCallContent call:
             {
-                var callId = _secrets.Sanitize(call.CallId) ?? "";
+                var callId = ids.Clean(call.CallId);
                 var name = _secrets.Sanitize(call.Name) ?? "";
                 IDictionary<string, object?>? arguments = call.Arguments;
                 var argumentsChanged = false;
@@ -134,7 +140,7 @@ internal sealed class SerializedRequestGuard : DelegatingChatClient
             }
             case FunctionResultContent result:
             {
-                var callId = _secrets.Sanitize(result.CallId) ?? "";
+                var callId = ids.Clean(result.CallId);
                 var walked = Walk(result.Result, ref budget);
                 if (walked is null && callId == result.CallId) return result;
                 return new FunctionResultContent(callId, walked is { } element ? (object)element : result.Result);

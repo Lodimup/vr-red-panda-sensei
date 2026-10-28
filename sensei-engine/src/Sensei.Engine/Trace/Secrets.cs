@@ -111,14 +111,17 @@ public sealed class Secrets
     /// </summary>
     internal Secrets Union(Secrets other) => new(_known.Concat(other._known));
 
-    /// <summary>True when <paramref name="text"/> contains a known secret or a credential-pattern match (→ <c>looks_like_credential</c>).</summary>
-    public bool Check(string? text)
+    /// <summary>True when <paramref name="text"/> contains a known secret (S126, exact match). The credential pattern is not asked.</summary>
+    internal bool ContainsKnown(string? text)
     {
         if (string.IsNullOrEmpty(text)) return false;
         foreach (var s in _known)
             if (text!.IndexOf(s, StringComparison.Ordinal) >= 0) return true;
-        return CredentialPattern.IsMatch(text);
+        return false;
     }
+
+    /// <summary>True when <paramref name="text"/> contains a known secret or a credential-pattern match (→ <c>looks_like_credential</c>).</summary>
+    public bool Check(string? text) => ContainsKnown(text) || CredentialPattern.IsMatch(text);
 
     /// <summary>
     /// Known secrets and credential-pattern matches replaced by <c>[redacted]</c>; null stays null. Known secrets and patterns
