@@ -28,18 +28,17 @@ namespace Sensei.App
         public string ModelStatus { get; private set; } = "no key"; public string VoiceStatus => speech != null ? "ready" : "not loaded"; public string RecognizerStatus => recognizer != null ? "ready" : "not loaded";
         private UnityEngineEvents? engineEvents; private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private long turnToken; private int turnCount; public int TestTranscriptStarts { get; private set; } private string engineState = "idle"; private string? voiceFailure;
 
-        private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey; private bool destroyed;
+        private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private bool ready; private bool slow; private bool changingPace; private bool hasKey; private bool destroyed;
         private void Start()
         {
             var rig = FindFirstObjectByType<OVRCameraRig>();
             if (rig == null) { Debug.LogError("RPS_BOOT step=1 fail missing camera rig"); return; }
             var obj = new GameObject("Practice area"); area = obj.AddComponent<PracticeAreaView>(); area.Initialize(rig.centerEyeAnchor, rig.rightHandAnchor);
             sensei = obj.AddComponent<SenseiView>(); sensei.Initialize(rig.centerEyeAnchor, area);
-            label = FindFirstObjectByType<TMP_Text>(); if (label != null) label.gameObject.SetActive(false);
             panelFont ??= Resources.Load<TMP_FontAsset>("Fonts/NotoSansJP");
-            statusPanel = new GameObject("Status panel").AddComponent<StatusPanel>(); statusPanel.Initialize(rig.centerEyeAnchor, panelFont);
-            taskCard = new GameObject("Task card").AddComponent<TaskCard>(); taskCard.Initialize(area.transform, panelFont);
-            hintCard = new GameObject("Hint card").AddComponent<HintCard>(); hintCard.Initialize(area.transform, panelFont);
+            statusPanel = new GameObject("Status panel").AddComponent<StatusPanel>(); statusPanel.Initialize(rig.centerEyeAnchor, panelFont, area.transform);
+            taskCard = new GameObject("Task card").AddComponent<TaskCard>(); taskCard.Initialize(area.transform, panelFont, rig.centerEyeAnchor);
+            hintCard = new GameObject("Hint card").AddComponent<HintCard>(); hintCard.Initialize(area.transform, panelFont, rig.centerEyeAnchor);
             menu = new GameObject("Menu panel").AddComponent<MenuPanel>(); menu.Initialize(rig.leftHandAnchor, rig.centerEyeAnchor, this, panelFont);
             var controller = gameObject.AddComponent<ControllerInput>(); controller.Initialize(this, area, rig.rightHandAnchor);
             var captionObject = new GameObject("Captions"); captionObject.transform.SetParent(area.transform, false); captions = captionObject.AddComponent<CaptionPanel>(); captions.Initialize(rig.centerEyeAnchor);
@@ -50,20 +49,17 @@ namespace Sensei.App
         private void Report(string text)
         {
             Debug.Log(LogRedactor.Redact(text, logKey));
-            string display = text;
-            if (text.StartsWith("RPS_BOOT step="))
-            {
-                var names = new[] { "", "Load settings", "Install voice models", "Load voice", "Load recognizer", "Load profile", "Place practice area", "Start session" };
-                var step = 0;
-                if (text.Length > 14 && int.TryParse(text.Substring(14, 1), out step) && step > 0 && step < names.Length)
-                    display = names[step] + (text.Contains("voice_deferred") ? ": waiting for voice" : text.Contains("fail") ? ": failed" : ": ready");
-                if (text.Contains("fail") && (step == 2 || step == 3 || step == 4)) {
-                    var model = text.Contains("Supertonic") ? "Supertonic (supertonic3)" : text.Contains("SenseVoice") ? "SenseVoice-nano" : "voice model";
-                    var reason = text.Split(' ').Last();
-                    display = names[step] + ": " + model + " failed (" + reason + ")";
-                }
-            }
-            statusPanel.Add(LogRedactor.Redact(display, logKey), text.Contains("fail") || text.StartsWith("No API key"));
+            var failed = text.Contains("fail") || text.StartsWith("No API key");
+            string display;
+            if (failed) {
+                if (text.Contains("Supertonic")) display = "Supertonic voice could not be loaded.";
+                else if (text.Contains("SenseVoice")) display = "SenseVoice-nano could not be loaded.";
+                else if (text.StartsWith("No API key")) display = "No API key configured.";
+                else display = "Could not start the session.";
+            } else if (!text.StartsWith("RPS_")) { display = text; failed = true; }
+            else if (text.Contains("step=7")) display = "Ready";
+            else display = "Loading voice…";
+            statusPanel.Add(LogRedactor.Redact(display, logKey), failed);
         }
         private async Task BootAsync(string path, YouSaidLine you)
 

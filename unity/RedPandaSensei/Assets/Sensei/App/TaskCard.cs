@@ -11,7 +11,7 @@ namespace Sensei.App
     {
         private string? key; private string? resetTaskId; private long resetSequence;
         private TextMeshPro text = null!; private TaskView? task; private SupportSettings support = new SupportSettings();
-        public void Initialize(Transform area, TMP_FontAsset? font) { transform.SetParent(area, false); transform.localPosition = new Vector3(0, 1.35f, 0); PanelText.Surface(transform, "Task background", Vector3.zero, new Vector3(.65f, .25f, .01f)); text = PanelText.Create(transform, "Task", new Vector3(0, 0, -.01f), new Vector2(.62f, .23f), 0.30f, font); gameObject.SetActive(false); }
+        public void Initialize(Transform area, TMP_FontAsset? font, Transform? head = null) { transform.SetParent(area, false); var slot = PanelLayout.Task; transform.localPosition = slot.Centre; PanelText.Surface(transform, "Task background", Vector3.zero, new Vector3(slot.Size.x, slot.Size.y, .01f)); text = PanelText.Create(transform, "Task", new Vector3(0, 0, -.01f), slot.Size - new Vector2(.03f, .02f), 0.30f, font); if (head != null) gameObject.AddComponent<PanelBillboard>().Initialize(head); gameObject.SetActive(false); }
         public void SetKey(string? value) => key = value;
         public void Reset(TaskView? previous) { previous ??= task; if (previous != null) { resetTaskId = previous.TaskId; resetSequence = previous.StartSequence; } task = null; Refresh(); }
         public void Show(TaskView? value) { if (value != null && ((resetTaskId != null && value.TaskId == resetTaskId) || (resetSequence > 0 && value.StartSequence <= resetSequence))) return; task = value; Refresh(); }

@@ -161,26 +161,11 @@ namespace Sensei.Editor
                     camera.farClipPlane = 100f;
                 }
                 rig.centerEyeAnchor.GetComponent<Camera>().tag = "MainCamera";
-                var textObject = new GameObject("Smoke Status", typeof(TextMeshPro));
-                textObject.transform.SetParent(rig.centerEyeAnchor, false);
-                textObject.transform.localPosition = new Vector3(0, 0, 1.5f);
-                var text = textObject.GetComponent<TextMeshPro>();
-                text.font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset");
-                if (text.font == null) throw new BuildFailedException("TMP essential font was not imported.");
-                text.rectTransform.sizeDelta = new Vector2(1.65f, 0.6f);
-                text.fontSize = 1.2f;
-                text.alignment = TextAlignmentOptions.Center;
-                text.color = Color.white;
-                text.outlineColor = Color.black;
-                text.outlineWidth = 0.3f;
-                text.text = "RPS_SMOKE starting";
-                var bootstrap = new GameObject("Smoke Bootstrap").AddComponent<SmokeBootstrap>();
-                var serialized = new SerializedObject(bootstrap);
-                serialized.FindProperty("label").objectReferenceValue = text;
-                serialized.ApplyModifiedPropertiesWithoutUndo();
                 Directory.CreateDirectory("Assets/Scenes");
                 EditorSceneManager.SaveScene(scene, scenePath);
             }
+            var smokeLabel = GameObject.Find("Smoke Status");
+            if (smokeLabel != null) UnityEngine.Object.DestroyImmediate(smokeLabel);
             var smoke = UnityEngine.Object.FindFirstObjectByType<SmokeBootstrap>();
             if (smoke != null) UnityEngine.Object.DestroyImmediate(smoke.gameObject);
             if (UnityEngine.Object.FindFirstObjectByType<EngineHost>() == null)

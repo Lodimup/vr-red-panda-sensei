@@ -1,5 +1,5 @@
 #nullable enable
-using System.Collections.Generic;
+using Sensei.App.Core;
 using TMPro;
 using UnityEngine;
 
@@ -7,14 +7,14 @@ namespace Sensei.App
 {
     public sealed class StatusPanel : MonoBehaviour
     {
-        private TextMeshPro text = null!; private Renderer background = null!; private readonly List<string> lines = new List<string>(); private float completedAt = -1; private bool error;
-        public void Initialize(Transform head, TMP_FontAsset? font)
+        private TextMeshPro text = null!; private Renderer background = null!; private float completedAt = -1; private bool error;
+        public void Initialize(Transform head, TMP_FontAsset? font, Transform? area = null)
         {
-            transform.SetParent(head, false); transform.localPosition = new Vector3(0, .15f, 1.3f);
-            background = PanelText.Surface(transform, "Status background", Vector3.zero, new Vector3(.8f, .35f, .01f)).GetComponent<Renderer>();
-            text = PanelText.Create(transform, "Status", new Vector3(0, 0, -.01f), new Vector2(.75f, .32f), 0.24f, font);
+            transform.SetParent(area != null ? area : head, false); var slot = PanelLayout.Status; transform.localPosition = slot.Centre; gameObject.AddComponent<PanelBillboard>().Initialize(head);
+            background = PanelText.Surface(transform, "Status background", Vector3.zero, new Vector3(slot.Size.x, slot.Size.y, .01f)).GetComponent<Renderer>();
+            text = PanelText.Create(transform, "Status", new Vector3(0, 0, -.01f), slot.Size - new Vector2(.03f, .02f), 0.24f, font);
         }
-        public void Add(string line, bool isError = false) { lines.Add(line); text.text = string.Join("\n", lines); error |= isError; if (isError) { text.alpha = 1; var color = background.sharedMaterial.color; color.a = 1; background.sharedMaterial.color = color; } gameObject.SetActive(true); }
+        public void Add(string line, bool isError = false) { if (!error || isError) text.text = line; error |= isError; if (isError) { text.alpha = 1; var color = background.sharedMaterial.color; color.a = 1; background.sharedMaterial.color = color; } gameObject.SetActive(true); }
         public void Complete() { completedAt = Time.time; }
         private void Update()
         {
