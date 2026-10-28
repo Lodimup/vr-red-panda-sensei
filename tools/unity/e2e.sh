@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/../.." && pwd)
-runs=/Users/calicoagent/Projects/vr-red-panda-sensei_runs/unity/e2e
+runs=${RPS_E2E_OUT:-$(pwd)/.e2e-out}
 python_bin=$(uv python find)
 serial=2G0YC5ZF8402ZP
 export QUEST_SERIAL=$serial

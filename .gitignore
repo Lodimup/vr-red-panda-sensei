@@ -25,3 +25,4 @@ unity/**/*.slnx
 # Locally generated spoken E2E fixtures
 unity/RedPandaSensei/Assets/StreamingAssets/e2e/
 unity/RedPandaSensei/Assets/StreamingAssets/e2e.meta
+.e2e-out/
