@@ -111,6 +111,11 @@ try:
                     time.sleep(2)
                     with open(screenshot, 'wb') as output:
                         subprocess.run(adb + ['exec-out', 'screencap', '-p'], stdout=output, check=True)
+                second_screenshot = os.environ.get('RPS_SCREENSHOT_PATH_2')
+                if second_screenshot:
+                    time.sleep(1)
+                    with open(second_screenshot, 'wb') as output:
+                        subprocess.run(adb + ['exec-out', 'screencap', '-p'], stdout=output, check=True)
                 sys.exit(0)
     print('RPS_TURN timeout: no boot step 7 and completed turn within 180 seconds', flush=True)
 finally:
