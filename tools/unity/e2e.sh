@@ -10,8 +10,8 @@ if [[ $scenario == prepare ]]; then
   scenario=${2:-}
   [[ $# == 2 && $scenario =~ ^a(01|10|11)$ ]] || { echo 'Usage: e2e.sh prepare a01|a10|a11' >&2; exit 2; }
   dest="$repo/unity/RedPandaSensei/Assets/StreamingAssets/e2e"
-  mkdir -p "$dest"
-  make_wav() { local name=$1 voice=$2 words=$3; local aiff; aiff=$(mktemp "${TMPDIR:-/tmp}/rps-XXXXXX.aiff"); say -v "$voice" -o "$aiff" "$words"; afconvert -f WAVE -d LEI16@16000 -c 1 "$aiff" "$dest/$name.wav"; rm -f "$aiff"; }
+  mkdir -p "$dest" "$HOME/scratchpad"
+  make_wav() { local name=$1 voice=$2 words=$3; local aiff; aiff=$(mktemp "$HOME/scratchpad/rps-XXXXXX.aiff"); say -v "$voice" -o "$aiff" "$words"; afconvert -f WAVE -d LEI16@16000 -c 1 "$aiff" "$dest/$name.wav"; rm -f "$aiff"; }
   case $scenario in
     a01) make_wav novice Samantha "I don't know any Japanese at all."; make_wav red Samantha 'What is that red one?'; make_wav request Kyoko 'りんごをください'; make_wav thanks Kyoko 'ありがとう';;
     a10) make_wav interrupt Samantha 'Please show me an apple.';;
