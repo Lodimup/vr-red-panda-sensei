@@ -61,6 +61,7 @@ internal sealed class SenseiAgent : IAgentRunner
                 {
                     Instructions = SystemPrompt.Text,
                     Tools = offered.Cast<AITool>().ToList(),
+                    AllowMultipleToolCalls = true,
                 },
                 ChatHistoryProvider = _history,
                 AIContextProviders = new AIContextProvider[] { new SenseiContextProvider(_renderer, () => _active) },
@@ -150,12 +151,12 @@ internal sealed class SenseiAgent : IAgentRunner
         lock (_core.Sync) _eventMark = _core.World.LastEventId;
     }
 
-    /// <summary>S65: settle unanswered calls, then make room so the incoming learner message is the 12th at most.</summary>
+    /// <summary>S65: settle unanswered calls, make room so the incoming learner message is the 12th at most, and shrink what the finished turns left behind.</summary>
     private void PrepareHistory(ChatClientAgentSession session)
     {
         var messages = _history!.GetMessages(session);
         HistorySettler.Settle(messages);
-        _history.SetMessages(session, LearnerBoundaryReducer.Trim(messages, LearnerBoundaryReducer.MaxLearnerTurns - 1));
+        _history.SetMessages(session, HistoryCompactor.Compact(LearnerBoundaryReducer.Trim(messages, LearnerBoundaryReducer.MaxLearnerTurns - 1)));
     }
 
     private void RaiseState(TurnScope scope, string state)

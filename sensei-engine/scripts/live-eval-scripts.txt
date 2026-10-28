@@ -1,0 +1,42 @@
+# Fixed scripted conversations for sensei-engine/scripts/live-eval.sh.
+#
+#   @conversation <id> | <description>   starts a conversation (3 to 5 learner lines)
+#   @band <band>                          the player picks this starting band before the first line (optional)
+#   > <text>                              a learner line
+#   >* <text>                             a learner line in which the learner really tries Japanese: Sensei is expected
+#                                         to record an attempt on that turn (the eval counts these for its 80% target)
+#
+# The lines are typed transcripts, as the speech recogniser would hand them over.
+
+@conversation zero_water | zero-knowledge learner asks for something to drink and says the water request
+> Hello! I'm a complete beginner. Can you show me something to drink?
+>* Mizu o kudasai.
+> Thank you! What should we do next?
+>* おちゃをください。
+
+@conversation off_topic | beginner asks two off-topic questions in the middle of the activity, then goes back to it
+@band early_beginner
+> Hi Sensei! I know a few words already. Can we practice asking for things?
+> Quick question first: how do you say "train station" in Japanese?
+> Thanks! And what about "airport"?
+>* Okay, back to the game. りんごをください。
+
+@conversation intermediate_explains | intermediate learner explains a choice in Japanese
+@band intermediate
+> こんにちは。今日は日本語で話したいです。何かできますか？
+>* 私はお茶を選びます。水より体にいいと思うからです。
+>* でも朝はコーヒーが飲みたいです。眠いですから。
+> ありがとうございます。次は何をしますか？
+
+@conversation advanced_register | advanced learner asks how a request changes with the listener
+@band advanced
+>* すみません、お茶をいただけますでしょうか。
+> 友達に言うならどうなりますか？
+>* じゃあ、お茶ちょうだい。これでいい？
+> 上司に頼む場合はどうですか？
+
+@conversation mixed_languages | learner mixes English and Japanese in the same line
+> Hello! 今日はちょっと疲れていますけど I want to practice. Can we start?
+>* りんごをください、please!
+> What is the difference between これ and それ? ちょっとわからない。
+>* Okay, じゃあ、それをください。
