@@ -13,7 +13,7 @@ namespace Sensei.Unity
             foreach (var segment in request.Segments)
             {
                 ct.ThrowIfCancellationRequested();
-                Debug.Log($"RPS_SPEAK lang={segment.Lang} text={segment.Text.Replace('\n', ' ').Replace('\r', ' ')}");
+                Debug.Log($"RPS_SPEAK lang={segment.Lang} chars={segment.Text.Length} synth_ms=0");
             }
             return Task.FromResult(new SpeechOutcome("completed", null));
         }

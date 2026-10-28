@@ -61,7 +61,7 @@ namespace Sensei.App.Core
     {
         public static string? ForTurn(string status, string? errorCode)
         {
-            if (status != "failed") return null;
+            if (status != "failed" || errorCode == "budget_exhausted") return null;
             switch (errorCode)
             {
                 case "auth_failed": return "The API key was rejected.";

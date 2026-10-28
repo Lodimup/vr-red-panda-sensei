@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using Sensei.Unity;
+using Sensei.App;
 using TMPro;
 using UnityEditor;
 using UnityEditor.Build;
@@ -15,6 +16,7 @@ using UnityEngine.Rendering;
 using UnityEngine.XR.Management;
 using UnityEngine.XR.OpenXR;
 using UnityEngine.XR.OpenXR.Features.MetaQuestSupport;
+using UnityEngine.XR.OpenXR.Features.Interactions;
 
 namespace Sensei.Editor
 {
@@ -26,6 +28,7 @@ namespace Sensei.Editor
             {
                 ConfigurePlayer();
                 ConfigureXr();
+                EnsureMaterials();
                 EnsureBootScene();
                 AssetDatabase.SaveAssets();
                 Directory.CreateDirectory("Build");
@@ -101,6 +104,10 @@ namespace Sensei.Editor
             var quest = xr.GetFeature<MetaQuestFeature>();
             if (quest == null) throw new BuildFailedException("Meta Quest support feature not found.");
             quest.enabled = true;
+            var touch = xr.GetFeature<OculusTouchControllerProfile>();
+            if (touch == null) throw new BuildFailedException("Oculus Touch interaction profile not found.");
+            touch.enabled = true;
+            EditorUtility.SetDirty(touch);
             xr.renderMode = OpenXRSettings.RenderMode.SinglePassInstanced;
             var config = OVRProjectConfig.CachedProjectConfig;
             // RULING(Handler 2026-10-28): allow launch with sleeping controllers; hand tracking is optional.
@@ -112,6 +119,21 @@ namespace Sensei.Editor
             EditorUtility.SetDirty(general);
             EditorUtility.SetDirty(general.Manager);
             AssetDatabase.SaveAssets();
+        }
+
+        private static void EnsureMaterials()
+        {
+            Directory.CreateDirectory("Assets/Art/Resources");
+            AssetDatabase.Refresh();
+            foreach (var entry in new[] { ("SenseiGhost", "Sensei/GhostFade"), ("SenseiCard", "Sensei/Card"), ("SenseiLine", "Unlit/Color") })
+            {
+                var path = "Assets/Art/Resources/" + entry.Item1 + ".mat";
+                var shader = Shader.Find(entry.Item2);
+                if (shader == null) throw new BuildFailedException("Missing shader " + entry.Item2);
+                var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (material == null) AssetDatabase.CreateAsset(new Material(shader), path);
+                else if (material.shader != shader) { material.shader = shader; EditorUtility.SetDirty(material); }
+            }
         }
 
         private static void EnsureBootScene()
@@ -158,6 +180,14 @@ namespace Sensei.Editor
                 Directory.CreateDirectory("Assets/Scenes");
                 EditorSceneManager.SaveScene(scene, scenePath);
             }
+            var smoke = UnityEngine.Object.FindFirstObjectByType<SmokeBootstrap>();
+            if (smoke != null) UnityEngine.Object.DestroyImmediate(smoke.gameObject);
+            if (UnityEngine.Object.FindFirstObjectByType<EngineHost>() == null)
+                new GameObject("Engine Host").AddComponent<EngineHost>();
+            var sceneRig = UnityEngine.Object.FindFirstObjectByType<OVRCameraRig>();
+            if (sceneRig != null) sceneRig.GetComponent<OVRManager>().trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
+            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(scenePath, true) };
         }
     }

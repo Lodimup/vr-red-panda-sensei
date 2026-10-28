@@ -38,6 +38,8 @@ selector = selectors.DefaultSelector()
 selector.register(process.stdout, selectors.EVENT_READ)
 deadline = float(os.environ['RPS_LAUNCH_MONOTONIC']) + 180
 status = 1
+booted = False
+turn_done = False
 buffer = b''
 try:
     while time.monotonic() < deadline:
@@ -52,8 +54,12 @@ try:
             line = raw.decode('utf-8', errors='replace').rstrip('\r')
             if 'RPS_' not in line: continue
             print(line, flush=True)
-            if 'RPS_SMOKE error' in line: sys.exit(1)
-            if 'RPS_SMOKE done' in line:
+            if 'RPS_BOOT fail' in line or 'RPS_TURN failed' in line: sys.exit(1)
+            if 'RPS_BOOT step=7 ok' in line: booted = True
+            if 'RPS_TURN status=' in line:
+                if 'RPS_TURN status=completed ' not in line: sys.exit(1)
+                turn_done = True
+            if booted and turn_done:
                 elapsed = time.monotonic() - float(os.environ['RPS_LAUNCH_MONOTONIC'])
                 print(f'launch_to_done_seconds={elapsed:.3f}', flush=True)
                 dump = subprocess.run(['adb'] + (['-s', serial] if serial else []) +
@@ -69,7 +75,7 @@ try:
                         subprocess.run(['adb'] + (['-s', serial] if serial else []) +
                                        ['exec-out', 'screencap', '-p'], stdout=output, check=True)
                 sys.exit(0)
-    print('RPS_SMOKE error timeout: no completed turn within 180 seconds', flush=True)
+    print('RPS_TURN timeout: no boot step 7 and turn within 180 seconds', flush=True)
 finally:
     selector.close()
     process.terminate()

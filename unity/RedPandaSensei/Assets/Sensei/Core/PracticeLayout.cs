@@ -51,7 +51,7 @@ namespace Sensei.App.Core
                 var items = group.OrderBy(x => x.Slot).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
                 for (var i = 0; i < items.Length; i++)
                 {
-                    var row = i / 4; var rowStart = row * 4; var n = Math.Min(4, items.Length - rowStart);
+                    var row = i < 4 ? 0 : 1; var rowStart = row * 4; var n = row == 0 ? Math.Min(4, items.Length) : items.Length - 4;
                     var position = group.Key == "learner_hand" ? Vector3.zero : RegionCentre(group.Key) + new Vector3((i - rowStart - (n - 1) / 2f) * SlotSpacing, 0, row * RowDepth);
                     var item = items[i]; positions[item.Id] = position;
                     result.Add(new Placement(item.Id, item.CatalogId, item.Region, null, position, 1));
@@ -64,7 +64,7 @@ namespace Sensei.App.Core
                 for (var i = 0; i < items.Length; i++)
                 {
                     var item = items[i];
-                    var p = origin + new Vector3((i - (items.Length - 1) / 2f) * 0.05f, 0.06f, -0.03f);
+                    var p = item.Region == "learner_hand" ? Vector3.zero : origin + new Vector3((i - (items.Length - 1) / 2f) * 0.05f, 0.06f, -0.03f);
                     result.Add(new Placement(item.Id, item.CatalogId, item.Region, item.ContainerId, p, 0.6f));
                 }
             }
