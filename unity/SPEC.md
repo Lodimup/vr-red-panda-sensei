@@ -22,8 +22,8 @@ Anchor = a pose on the floor plane, placed at boot 0.9 m in front of the head al
 
 - **U4** Mat: a flat cardboard tray quad 1.4 m × 0.5 m at y = 0.80, centre z = 0.
 - **U5** Region centres: `left` x = −0.45, `center` x = 0, `right` x = +0.45, all z = 0, y = 0.80. `sensei_side` x = −0.95, z = 0.15, y = 0.80. `learner_hand` = attached to the right controller (offset 0, 0.02, 0.08 in controller space).
-- **U6** Within a region, objects not in a container are ordered by `slot` ascending and laid out left to right with 0.16 m spacing, centred on the region centre; more than 4 in a region wrap to a second row at z = +0.14.
-- **U7** Objects inside a container: drawn at the container position + (k·0.05 − offset, 0.06, −0.03), scale 0.6, in slot order; still selectable.
+- **U6** Within a region, objects not in a container are ordered by `slot` ascending. The first 4 form row 1 (z = 0), the rest row 2 (z = +0.14). Each row is centred on the region centre independently: item i of a row with n items has x = centre + (i − (n − 1)/2) · 0.16. RULING(orchestrator 2026-10-28).
+- **U7** Objects inside a container, in slot order k = 0..m−1, are placed at the container's position + ((k − (m − 1)/2) · 0.05, +0.06, −0.03), scale 0.6 (each container's group centred independently); still selectable.
 - **U8** Object card size: 0.20 m tall standee (the `_card.png`), upright, yawed to face the head (y-axis billboard), bottom edge on the mat.
 - **U9** Sensei: standee 0.75 m tall at x = −0.85, z = +0.25, bottom at y = 0.75, floating bob ±0.02 m at 0.4 Hz, y-billboard to head.
 - **U10** `PracticeLayout.Compute(SceneSnapshot) → IReadOnlyList<Placement{ InstanceId, CatalogId, Region, LocalPosition, Scale, ContainerId }>` is pure and deterministic. Views tween each card from its old to its new position in 0.25 s.
@@ -94,7 +94,7 @@ public static class PracticeLayout {
     public const float MatY = 0.80f, RegionSpacing = 0.45f, SlotSpacing = 0.16f, RowDepth = 0.14f;
     public static IReadOnlyList<Placement> Compute(Sensei.Engine.World.SceneSnapshot scene);   // U5-U7, U10; learner_hand items get LocalPosition = Vector3.zero (view attaches them to the controller)
     public static UnityEngine.Vector3 RegionCentre(string region);                               // U5
-    public static string? RegionAt(UnityEngine.Vector3 localPoint);                              // U22 drop zones: |x - centre| <= 0.225, z in [-0.25, 0.25], y in [0.75, 1.10] -> left/center/right, else null
+    public static string? RegionAt(UnityEngine.Vector3 localPoint);                              // U22 drop zones (y in [0.75, 1.10], z in [-0.25, 0.25], inclusive): x in [-0.675, -0.225] -> left, (-0.225, 0.225] -> center, (0.225, 0.675] -> right, else null; a shared edge belongs to the region on its left
 }
 public enum SenseiPose { IdleFloat, Listen, Think, Speak, Point, Encourage, Demonstrate }
 public sealed class PoseState {                         // U13, pure; time in seconds supplied by caller

@@ -1,0 +1,6 @@
+{
+  "name": "Sensei.App.Core",
+  "overrideReferences": true,
+  "precompiledReferences": ["Sensei.Engine.dll"],
+  "autoReferenced": true
+}
