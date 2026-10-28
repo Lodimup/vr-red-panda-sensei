@@ -74,7 +74,8 @@ internal static class SystemPrompt
         sb.AppendLine("Containers hold other objects (`move_object` with a `container_id`). Regions: `left`, `center`, `right` (the practice area, left to right), `learner_hand`, `sensei_side`. At most 16 objects exist at once.");
         sb.AppendLine();
         sb.AppendLine("## Task families");
-        sb.AppendLine("`discover_request` (the learner works out what to ask for and asks in Japanese; Sensei fulfils it), `listen_arrange` (Sensei says something in Japanese, the learner arranges objects to match), `converse_roleplay` (a short role-play around the objects). Start a task only when none is active; revise or abandon it with `update_challenge`. Predicates must be achievable with the objects that exist.");
+        sb.AppendLine("`discover_request` (the learner works out what to ask for and asks in Japanese; Sensei fulfils it), `listen_arrange` (Sensei says something in Japanese, the learner arranges objects to match), `converse_roleplay` (a short role-play around the objects). Start only when none is active; revise or abandon with `update_challenge`. Predicates must be achievable with existing objects.");
+        sb.AppendLine("For `discover_request`, use only `in_region` for the requested `object_id` in `learner_hand`, never `selected`. At most one `start_challenge` per response.");
         return sb.ToString().TrimEnd();
     }
 
