@@ -65,3 +65,9 @@ bash tools/unity/run-quest.sh
 ```
 
 Run the commands under the shared Quest lease as described above. Provision without `--test-turn` to remove the test instruction for ordinary use.
+
+### Local voice and development hooks
+
+Run `bash tools/unity/fetch-voice-models.sh` before building to install the pinned Supertonic 3 and SenseVoice-nano models into the app's ignored StreamingAssets directory. The app uses local synthesis and recognition; no speech audio is sent to a network service.
+
+For development checks only, `sensei.env` may contain `RPS_DEBUG_TEXT=1` to log a redacted transcript, `RPS_TEST_AUDIO=ja-01.wav` to use a PCM16 WAV from StreamingAssets on the first push-to-talk, `RPS_TEST_PTT_SECONDS=5` to trigger a five-second hold at the first idle moment, and `RPS_TEST_INTERRUPT_MS=1500` to trigger the hold during speech instead. Remove these lines for ordinary use. Test audio must be bundled before building and is not committed.

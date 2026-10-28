@@ -11,6 +11,7 @@ namespace Sensei.Voice
         private AudioClip clip;
         private string device;
         private bool permissionPending;
+        private int permissionRequest;
         // Null selects Unity's default device; a name explicitly selects one enumerated device.
         public string DeviceName { get; set; }
         // Wait for captured samples, not just device startup, before timing a recording.
@@ -23,9 +24,10 @@ namespace Sensei.Voice
             if (!Permission.HasUserAuthorizedPermission(Permission.Microphone))
             {
                 permissionPending = true;
+                int request = ++permissionRequest;
                 var callbacks = new PermissionCallbacks();
-                callbacks.PermissionGranted += _ => { permissionPending = false; if (this != null && isActiveAndEnabled) StartCapture(); };
-                callbacks.PermissionDenied += _ => { permissionPending = false; Debug.LogError("Microphone permission denied"); };
+                callbacks.PermissionGranted += _ => { if (request != permissionRequest) return; permissionPending = false; if (this != null && isActiveAndEnabled) StartCapture(); };
+                callbacks.PermissionDenied += _ => { if (request != permissionRequest) return; permissionPending = false; Debug.LogError("Microphone permission denied"); };
                 Permission.RequestUserPermission(Permission.Microphone, callbacks);
                 return;
             }
@@ -43,7 +45,7 @@ namespace Sensei.Voice
 
         public float[] End()
         {
-            if (clip == null) throw new InvalidOperationException("Microphone is not recording");
+            if (clip == null) { permissionPending = false; ++permissionRequest; throw new InvalidOperationException("Microphone is not recording"); }
             int count = Microphone.GetPosition(device);
             if (!Microphone.IsRecording(device) && count == 0) count = clip.samples;
             Microphone.End(device);
@@ -60,6 +62,7 @@ namespace Sensei.Voice
 
         private void OnDisable()
         {
+            permissionPending = false; ++permissionRequest;
             if (clip == null) return;
             Microphone.End(device);
             Destroy(clip);
