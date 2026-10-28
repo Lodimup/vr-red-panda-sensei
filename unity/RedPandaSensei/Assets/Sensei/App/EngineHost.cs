@@ -23,6 +23,8 @@ namespace Sensei.App
     {
         private readonly MainThreadQueue queue = new MainThreadQueue(); private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         [SerializeField] private TMP_FontAsset? panelFont;
+        internal Action repeatBeforeEngine = () => { };
+        private CancellationTokenSource pauseCts = new CancellationTokenSource();
         private int pauseEpoch; private Func<Func<Task<Sensei.Engine.Tools.ToolResult>>, Task<Sensei.Engine.Tools.ToolResult>> repeatScheduler = work => Task.Run(work);
         private int finishedTurns; private int hintShownAt = -1; private string? logKey;
         private StatusPanel statusPanel = null!; private TaskCard taskCard = null!; private HintCard hintCard = null!; private MenuPanel menu = null!;
@@ -129,12 +131,12 @@ namespace Sensei.App
         public async Task<bool> Repeat()
         {
             var current = engine; if (!ready || current == null) return false;
-            var epoch = Volatile.Read(ref pauseEpoch);
+            var epoch = Volatile.Read(ref pauseEpoch); var pauseToken = pauseCts.Token;
             var token = ++turnToken; turnBusy = true; Interlocked.Increment(ref turnCount);
             try
             {
-                var result = await repeatScheduler(() => Volatile.Read(ref pauseEpoch) == epoch ? current.ReplayLastSpeechAsync(ct: lifetime.Token) : Task.FromResult<Sensei.Engine.Tools.ToolResult>(null!));
-                if (result == null) return false;
+                var result = await repeatScheduler(() => { if (Volatile.Read(ref pauseEpoch) != epoch) return Task.FromResult<Sensei.Engine.Tools.ToolResult>(null!); repeatBeforeEngine(); return current.ReplayLastSpeechAsync(ct: pauseToken); });
+                if (result == null || result.ErrorCode == "cancelled") return false;
                 if (result.ErrorCode == "nothing_to_replay") { captions?.ShowRepeatEmpty(); Debug.Log("RPS_REPEAT nothing"); return true; }
                 if (result.IsSuccess) { Debug.Log("RPS_REPEAT ok"); return true; }
                 Debug.LogError("RPS_REPEAT failed " + result.ErrorCode); return false;
@@ -198,7 +200,7 @@ namespace Sensei.App
             finally { changingPace = false; }
         }
         private void Update() => queue.Drain();
-        private void OnApplicationPause(bool paused) { if (paused) { Interlocked.Increment(ref pauseEpoch); pushToTalk?.CancelCapture(); InterruptSpeech(); } }
+        private void OnApplicationPause(bool paused) { if (paused) { Interlocked.Increment(ref pauseEpoch); pauseCts.Cancel(); pushToTalk?.CancelCapture(); InterruptSpeech(); } else { pauseCts = new CancellationTokenSource(); } }
         private void OnApplicationQuit() => Shutdown();
         private void OnDestroy() => Shutdown();
         private async void Shutdown()
@@ -206,7 +208,7 @@ namespace Sensei.App
             if (destroyed) return;
             destroyed = true; ready = false;
             var current = engine; engine = null;
-            current?.CancelGeneration(); lifetime.Cancel(); speech?.Interrupt();
+            pauseCts.Cancel(); current?.CancelGeneration(); lifetime.Cancel(); speech?.Interrupt();
             if (current != null) await current.DisposeAsync();
             tts?.Dispose(); recognizer?.Dispose();
         }
