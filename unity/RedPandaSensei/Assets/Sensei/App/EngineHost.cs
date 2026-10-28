@@ -22,7 +22,7 @@ namespace Sensei.App
     public sealed class EngineHost : MonoBehaviour
     {
         private readonly MainThreadQueue queue = new MainThreadQueue(); private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
-        private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private bool turnBusy; private string? voiceFailure;
+        private LocalTts? tts; private SenseVoiceRecognizer? recognizer; private LocalSpeechOutput? speech; private SpeechPlayer? player; private PushToTalk? pushToTalk; private CaptionPanel? captions; private int turnCount; public int TestTranscriptStarts { get; private set; } private string engineState = "idle"; private string? voiceFailure;
         private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey; private bool destroyed;
         private void Start()
         {
@@ -50,7 +50,7 @@ namespace Sensei.App
                 try { asrDir = await VoiceModelInstaller.EnsureInstalledAsync("sensevoice-nano", "2025-12-17", lifetime.Token); }
                 catch (Exception e) { Debug.LogError("RPS_BOOT step=2 fail SenseVoice-nano " + e.GetType().Name); }
                 if (ttsDir != null && asrDir != null) Report("RPS_BOOT step=2 ok");
-                try { if (ttsDir == null) throw new IOException(); tts = await LocalTts.LoadAsync(ttsDir); await tts.SynthesizeAsync("あ", "ja", 1f, lifetime.Token); speech = new LocalSpeechOutput(tts, player!, queue); speech.SegmentStarted += segment => captions!.Show(segment, speech.CurrentCaptions); speech.UtteranceEnded += () => captions!.End(); Report("RPS_BOOT step=3 ok"); }
+                try { if (ttsDir == null) throw new IOException(); tts = await LocalTts.LoadAsync(ttsDir); await tts.SynthesizeAsync("あ", "ja", 1f, lifetime.Token); speech = new LocalSpeechOutput(tts, player!, queue, debugText == "1", key); speech.SegmentStarted += segment => captions!.Show(segment, speech.CurrentCaptions); speech.UtteranceEnded += () => captions!.End(); Report("RPS_BOOT step=3 ok"); }
                 catch (Exception e) { voiceFailure = "Supertonic voice could not be loaded."; Report("RPS_BOOT step=3 fail Supertonic " + e.GetType().Name); }
                 if (destroyed) { tts?.Dispose(); return; }
                 try { if (asrDir == null) throw new IOException(); recognizer = await SenseVoiceRecognizer.LoadAsync(asrDir, useItn: false); Report("RPS_BOOT step=4 ok"); }
@@ -58,16 +58,17 @@ namespace Sensei.App
                 if (destroyed) { tts?.Dispose(); recognizer?.Dispose(); return; }
                 env.TryGetValue("RPS_TEST_AUDIO", out var testAudio); env.TryGetValue("RPS_TEST_PTT_SECONDS", out var testSeconds); env.TryGetValue("RPS_TEST_INTERRUPT_MS", out var testInterrupt);
                 pushToTalk = gameObject.AddComponent<PushToTalk>(); pushToTalk.Initialize(this, sensei, you, recognizer, testAudio, debugText == "1", key);
-                var events = new UnityEngineEvents(queue, area, sensei, pace => slow = pace == "slow");
+                var events = new UnityEngineEvents(queue, area, sensei, pace => slow = pace == "slow", state => engineState = state);
                 var created = await Task.Run(async () =>
                 {
                     var client = string.IsNullOrWhiteSpace(key) ? null : ChatClientFactory.Create(LlmSettings.FromEnvironment(env));
                     return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = (ISpeechOutput?)speech ?? new UnavailableSpeechOutput(), Events = events, ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
                 });
                 if (destroyed) { await created.DisposeAsync(); return; }
-                engine = created; hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.SetTestFrame(env.TryGetValue("RPS_TEST_FRAME", out var testFrame) && testFrame == "sensei"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); if (destroyed) return; area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
+                engine = created; if (env.TryGetValue("RPS_TEST_SCRIPT", out var testScript) && TestScriptParser.Enabled(testScript)) Debug.Log($"RPS_PROFILE sessions={created.GetProfile().Sessions.Count}"); hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.SetTestFrame(env.TryGetValue("RPS_TEST_FRAME", out var testFrame) && testFrame == "sensei"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); if (destroyed) return; area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
                 if (string.IsNullOrWhiteSpace(key)) { Report("No API key. Push sensei.env (see README)." + (voiceFailure == null ? "" : "\n" + voiceFailure)); return; }
                 var greeting = EventTurn("session_start");
+                if (TestScriptParser.Enabled(testScript)) gameObject.AddComponent<TestScriptDriver>().Initialize(this, pushToTalk, path, testScript!);
                 if (float.TryParse(testSeconds, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds) || !string.IsNullOrEmpty(testAudio) || !string.IsNullOrEmpty(testInterrupt)) { int.TryParse(testInterrupt, out var interruptMs); pushToTalk.StartTest(seconds, interruptMs); }
                 if (await greeting) { Report("RPS_BOOT step=7 ok"); if (voiceFailure != null) Report(voiceFailure); else if (label != null) label.gameObject.SetActive(false); }
                 else { Report("RPS_BOOT step=7 fail" + (voiceFailure == null ? "" : "\n" + voiceFailure)); return; }
@@ -86,16 +87,19 @@ namespace Sensei.App
             if (!hasKey) { Report("No API key. Push sensei.env (see README)."); return false; }
             try
             {
-                turnBusy = true; var watch = Stopwatch.StartNew(); var result = await Task.Run(() => engine.RunPlayerEventTurnAsync(kind, lifetime.Token));
+                Interlocked.Increment(ref turnCount); var watch = Stopwatch.StartNew(); var result = await Task.Run(() => engine.RunPlayerEventTurnAsync(kind, lifetime.Token));
                 var tools = string.Join(",", result.ToolCalls.Select(t => t.Tool)); Debug.Log($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={tools}"); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message);
                 return result.Status == "completed";
             }
             catch (OperationCanceledException) { return false; }
             catch (Exception error) { Debug.LogError("RPS_TURN failed type=" + error.GetType().Name); return false; }
-            finally { turnBusy = false; }
+            finally { Interlocked.Decrement(ref turnCount); }
         }
         public bool CanTalk => ready && hasKey;
-        public bool VoiceIdle => CanTalk && !turnBusy && !(player?.IsPlaying ?? false);
+        public bool VoiceIdle => CanTalk && Volatile.Read(ref turnCount) == 0 && !(player?.IsPlaying ?? false);
+        public bool TestIdle => VoiceIdle && engineState == "idle";
+        public async Task<bool> TestSelect(string catalog) { var current = engine; if (current == null) return false; return await Task.Run(() => { var item = current.GetScene().Instances.FirstOrDefault(x => x.CatalogId == catalog); return item != null && current.PlayerSelect(item.Id).Ok; }); }
+        public async Task<bool> TestMove(string catalog, string destination) { var current = engine; if (current == null) return false; return await Task.Run(() => { var scene = current.GetScene(); var item = scene.Instances.FirstOrDefault(x => x.CatalogId == catalog); var container = scene.Instances.FirstOrDefault(x => x.CatalogId == destination); return item != null && current.PlayerMove(item.Id, container == null ? destination : null, container?.Id).Ok; }); }
         public bool SpeechPlaying => player?.IsPlaying ?? false;
         public void InterruptSpeech()
         {
@@ -106,11 +110,11 @@ namespace Sensei.App
         public async Task RunTranscript(string transcript)
         {
             var current = engine; if (current == null || !hasKey) return;
-            turnBusy = true;
+            Interlocked.Increment(ref turnCount); TestTranscriptStarts++;
             try { var watch = Stopwatch.StartNew(); var result = await Task.Run(() => current.RunTurnAsync(transcript, lifetime.Token)); Debug.Log($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={string.Join(",", result.ToolCalls.Select(t => t.Tool))}"); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message); }
             catch (OperationCanceledException) { }
             catch (Exception e) { Debug.LogError("RPS_TURN failed type=" + e.GetType().Name); }
-            finally { turnBusy = false; }
+            finally { Interlocked.Decrement(ref turnCount); }
         }
         private sealed class UnavailableSpeechOutput : ISpeechOutput { public Task<SpeechOutcome> SpeakAsync(SpeechRequest request, CancellationToken ct) => Task.FromResult(new SpeechOutcome(SpeechStatuses.Failed, "voice unavailable", 0)); }
         public async void Select(string id)

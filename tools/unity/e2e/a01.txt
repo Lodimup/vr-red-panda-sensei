@@ -1,0 +1,11 @@
+wait_idle
+wav novice
+wait_idle
+wav red
+wait_idle
+event help_hint
+wait_idle
+wav request
+wait_idle
+wav thanks
+wait_idle
