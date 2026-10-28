@@ -161,6 +161,8 @@ namespace Sensei.App
         public async Task<bool> TestSelect(string catalog) { var current = engine; if (current == null) return false; return await Task.Run(() => { var item = current.GetScene().Instances.FirstOrDefault(x => x.CatalogId == catalog); return item != null && current.PlayerSelect(item.Id).Ok; }); }
         public async Task<bool> TestMove(string catalog, string destination) { var current = engine; if (current == null) return false; return await Task.Run(() => { var scene = current.GetScene(); var item = scene.Instances.FirstOrDefault(x => x.CatalogId == catalog); var container = scene.Instances.FirstOrDefault(x => x.CatalogId == destination); return item != null && current.PlayerMove(item.Id, container == null ? destination : null, container?.Id).Ok; }); }
         public bool SpeechPlaying => player?.IsPlaying ?? false;
+        // Sensei is in a spoken reply: audio playing, or between sentence chunks of the same reply.
+        public bool SpeechActive => SpeechPlaying || engineState == "speaking";
         public void InterruptSpeech()
         {
             var watch = Stopwatch.StartNew(); var wasPlaying = SpeechPlaying;
