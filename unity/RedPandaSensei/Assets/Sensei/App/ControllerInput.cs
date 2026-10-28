@@ -16,13 +16,13 @@ namespace Sensei.App
             host = engineHost; area = areaView; hand = handTransform; pointer = gameObject.AddComponent<RayPointer>(); pointer.Initialize(hand);
             trigger = Action("<XRController>{RightHand}/triggerPressed"); grip = Action("<XRController>{RightHand}/gripPressed");
             repeat = Action("<XRController>{RightHand}/secondaryButton"); hint = Action("<XRController>{LeftHand}/primaryButton"); replace = Action("<XRController>{LeftHand}/secondaryButton"); pace = Action("<XRController>{LeftHand}/thumbstickClicked");
-            trigger.performed += _ => { var card = pointer.HitCard(); if (card != null) host.Select(card.InstanceId); };
+            trigger.performed += _ => { var button = pointer.HitButton(); if (button != null) button.Press?.Invoke(); else { var card = pointer.HitCard(); if (card != null) host.Select(card.InstanceId); } };
             grip.performed += _ => { grabbed = pointer.HitCard(); if (grabbed != null) grabbed.Dragging = true; };
             grip.canceled += _ => Release();
             repeat.performed += context => { _ = host.EventTurn("help_repeat"); };
             hint.performed += context => { _ = host.EventTurn("help_hint"); };
             replace.performed += _ => { yDown = Time.time; replaced = false; };
-            replace.canceled += _ => { yDown = -1; };
+            replace.canceled += _ => { if (yDown >= 0 && !replaced) host.ToggleMenu(); yDown = -1; };
             pace.performed += _ => host.TogglePace();
             foreach (var a in new[] { trigger, grip, repeat, hint, replace, pace }) a.Enable();
         }

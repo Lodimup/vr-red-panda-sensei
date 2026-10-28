@@ -20,6 +20,10 @@ namespace Sensei.App
     public sealed class EngineHost : MonoBehaviour
     {
         private readonly MainThreadQueue queue = new MainThreadQueue(); private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
+        [SerializeField] private TMP_FontAsset? panelFont;
+        private int finishedTurns; private int hintShownAt = -1;
+        private StatusPanel statusPanel = null!; private TaskCard taskCard = null!; private HintCard hintCard = null!; private MenuPanel menu = null!;
+        public string ModelStatus { get; private set; } = "no key"; public string VoiceStatus => "not loaded"; public string RecognizerStatus => "not loaded";
         private SenseiEngine? engine; private PracticeAreaView area = null!; private SenseiView sensei = null!; private TMP_Text? label; private bool ready; private bool slow; private bool changingPace; private bool hasKey;
         private void Start()
         {
@@ -27,11 +31,26 @@ namespace Sensei.App
             if (rig == null) { Debug.LogError("RPS_BOOT step=1 fail missing camera rig"); return; }
             var obj = new GameObject("Practice area"); area = obj.AddComponent<PracticeAreaView>(); area.Initialize(rig.centerEyeAnchor, rig.rightHandAnchor);
             sensei = obj.AddComponent<SenseiView>(); sensei.Initialize(rig.centerEyeAnchor, area);
-            label = FindFirstObjectByType<TMP_Text>();
+            label = FindFirstObjectByType<TMP_Text>(); if (label != null) label.gameObject.SetActive(false);
+            statusPanel = new GameObject("Status panel").AddComponent<StatusPanel>(); statusPanel.Initialize(rig.centerEyeAnchor, panelFont);
+            taskCard = new GameObject("Task card").AddComponent<TaskCard>(); taskCard.Initialize(area.transform, panelFont);
+            hintCard = new GameObject("Hint card").AddComponent<HintCard>(); hintCard.Initialize(area.transform, panelFont);
+            menu = new GameObject("Menu panel").AddComponent<MenuPanel>(); menu.Initialize(rig.leftHandAnchor, this, panelFont);
             var controller = gameObject.AddComponent<ControllerInput>(); controller.Initialize(this, area, rig.rightHandAnchor);
             var path = Application.persistentDataPath; _ = BootAsync(path);
         }
-        private void Report(string text) { Debug.Log(text); if (label != null) label.text = text; }
+        private void Report(string text)
+        {
+            Debug.Log(text);
+            string display = text;
+            if (text.StartsWith("RPS_BOOT step="))
+            {
+                var names = new[] { "", "Load settings", "Install voice models", "Load voice", "Load recognizer", "Load profile", "Place practice area", "Start session" };
+                if (text.Length > 14 && int.TryParse(text.Substring(14, 1), out var step) && step > 0 && step < names.Length)
+                    display = names[step] + (text.Contains("voice_deferred") ? ": waiting for voice" : text.Contains("fail") ? ": failed" : ": ready");
+            }
+            statusPanel.Add(display, text.Contains("fail") || text.StartsWith("No API key"));
+        }
         private async Task BootAsync(string path)
         {
             try
@@ -40,20 +59,22 @@ namespace Sensei.App
                 Report("RPS_BOOT step=1 ok");
                 for (var i = 2; i <= 4; i++) Report($"RPS_BOOT step={i} ok voice_deferred");
                 var events = new UnityEngineEvents(queue, area, sensei, pace => slow = pace == "slow");
+                events.Hint = hint => { hintShownAt = finishedTurns; hintCard.Show(hint); }; events.Task = task => { hintCard.Clear(); taskCard.Show(task); }; events.Support = taskCard.SetSupport;
                 var created = await Task.Run(async () =>
                 {
                     var client = string.IsNullOrWhiteSpace(key) ? null : ChatClientFactory.Create(LlmSettings.FromEnvironment(env));
                     return await SenseiEngine.CreateAsync(new SenseiEngineOptions { ChatClient = client, Speech = new LogSpeechOutput(debugText == "1", key), Events = events, ProfileStore = new FileProfileStore(Path.Combine(path, "profiles")), ProfileId = "default", KnownSecrets = string.IsNullOrEmpty(key) ? Array.Empty<string>() : new[] { key } }, lifetime.Token);
                 });
-                engine = created; hasKey = !string.IsNullOrWhiteSpace(key); Report("RPS_BOOT step=5 ok"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; Report("RPS_BOOT step=6 ok"); ready = true;
-                if (string.IsNullOrWhiteSpace(key)) { Report("No API key. Push sensei.env (see README)."); return; }
-                if (await EventTurn("session_start")) { Report("RPS_BOOT step=7 ok"); if (label != null) label.gameObject.SetActive(false); }
+                engine = created; hasKey = !string.IsNullOrWhiteSpace(key); ModelStatus = hasKey ? "ready" : "no key"; menu.RefreshStatus(); Report("RPS_BOOT step=5 ok"); area.Place(); var snapshot = await Task.Run(() => created.GetScene()); area.Render(snapshot); slow = snapshot.Support.Pace == "slow"; taskCard.SetSupport(snapshot.Support); taskCard.Show(snapshot.ActiveTask); Report("RPS_BOOT step=6 ok"); ready = true;
+                if (env.TryGetValue("RPS_TEST_MENU", out var testMenu) && testMenu == "1") menu.Toggle();
+                if (string.IsNullOrWhiteSpace(key)) { Report("No API key. Push sensei.env (see README)."); statusPanel.Complete(); return; }
+                if (await EventTurn("session_start")) { Report("RPS_BOOT step=7 ok"); statusPanel.Complete(); }
                 else { Report("RPS_BOOT step=7 fail"); return; }
                 if (env.TryGetValue("RPS_TEST_TURN", out var testTurn) && !string.IsNullOrWhiteSpace(testTurn))
                 {
                     Debug.Log("RPS_TEST_TURN sent");
                     var testResult = await Task.Run(() => created.RunTurnAsync(testTurn, lifetime.Token));
-                    Debug.Log($"RPS_TEST_TURN status={testResult.Status}");
+                    FinishTurn(testResult.Status, testResult.ErrorCode); Debug.Log($"RPS_TEST_TURN status={testResult.Status}");
                 }
             }
             catch (Exception error) { Report($"RPS_BOOT fail type={error.GetType().Name}"); }
@@ -65,12 +86,21 @@ namespace Sensei.App
             try
             {
                 var watch = Stopwatch.StartNew(); var result = await Task.Run(() => engine.RunPlayerEventTurnAsync(kind, lifetime.Token));
-                var tools = string.Join(",", result.ToolCalls.Select(t => t.Tool)); Debug.Log($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={tools}"); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message);
+                FinishTurn(result.Status, result.ErrorCode); var tools = string.Join(",", result.ToolCalls.Select(t => t.Tool)); Debug.Log($"RPS_TURN status={result.Status} ms={watch.ElapsedMilliseconds} tools={tools}"); var message = TurnMessages.ForTurn(result.Status, result.ErrorCode); if (message != null) Debug.Log("RPS_ERROR " + message);
                 return result.Status == "completed";
             }
             catch (OperationCanceledException) { return false; }
             catch (Exception error) { Debug.LogError("RPS_TURN failed type=" + error.GetType().Name); return false; }
         }
+        private void FinishTurn(string status, string? code)
+        {
+            queue.Post(() => { finishedTurns++; if (hintShownAt >= 0 && finishedTurns > hintShownAt + 1) { hintCard.Clear(); hintShownAt = -1; } }); ModelStatus = code switch { "llm_not_configured" => "no key", "auth_failed" => "auth failed", "quota_exceeded" => "quota", "network_error" => "network", _ => hasKey ? "ready" : "no key" };
+            menu.RefreshStatus(); var message = TurnMessages.ForTurn(status, code); if (label != null) { label.gameObject.SetActive(message != null); if (message != null) label.text = message; }
+        }
+        public void ToggleMenu() => menu.Toggle();
+        public async Task<bool> SetBand(string band) { var current = engine; if (current == null) return false; try { await Task.Run(() => current.SetStartingBandAsync(band, lifetime.Token)); return true; } catch (Exception e) { Debug.LogError("RPS_BAND failed type=" + e.GetType().Name); return false; } }
+        public async Task<string> Summary() { var current = engine; if (current == null) return "Nothing practiced yet."; return MenuState.FormatSummary(await Task.Run(() => current.GetSessionSummary())); }
+        public async Task<bool> ResetProgress() { var current = engine; if (current == null) return false; try { await Task.Run(() => current.ResetProfileAsync(lifetime.Token)); taskCard.Show(null); hintCard.Clear(); return true; } catch (Exception e) { Debug.LogError("RPS_RESET failed type=" + e.GetType().Name); return false; } }
         public async void Select(string id)
         {
             var current = engine; if (current == null) return;

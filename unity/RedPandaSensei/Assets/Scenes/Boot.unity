@@ -974,6 +974,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d2f2a14661a22451fb7d5346f9b173ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Sensei.App::Sensei.App.EngineHost
+  panelFont: {fileID: 0}
 --- !u!4 &1479183676
 Transform:
   m_ObjectHideFlags: 0
