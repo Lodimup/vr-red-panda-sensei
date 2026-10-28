@@ -47,7 +47,7 @@ public class ReviewU1Tests
         } finally { RenderTexture.active = old; Object.DestroyImmediate(mat); Object.DestroyImmediate(rt); Object.DestroyImmediate(pixels); }
     }
 
-    [Test, Ignore("waits for sensei pose art batch RPS4")] public void EverySenseiPoseHasAnActualTexture()
+    [Test] public void EverySenseiPoseHasAnActualTexture()
     {
         var missing = new List<string>();
         foreach (var pose in new[] { "idle_float", "listen", "think", "speak", "point", "encourage", "demonstrate" })
