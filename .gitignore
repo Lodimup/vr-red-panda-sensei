@@ -8,3 +8,16 @@ obj/
 # local learner profiles and traces written by the CLI
 .sensei/
 TestResults/
+
+# Unity generated state
+unity/**/Library/
+unity/**/Temp/
+unity/**/Logs/
+unity/**/UserSettings/
+unity/**/Build/
+unity/**/obj/
+unity/**/.utmp/
+unity/**/.vscode/
+unity/**/*.csproj
+unity/**/*.sln
+unity/**/*.slnx

@@ -1,0 +1,20 @@
+<linker>
+  <assembly fullname="Sensei.Engine" preserve="all" />
+  <assembly fullname="Microsoft.Agents.AI" preserve="all" />
+  <assembly fullname="Microsoft.Agents.AI.Abstractions" preserve="all" />
+  <assembly fullname="Microsoft.Agents.AI.OpenAI" preserve="all" />
+  <assembly fullname="Microsoft.Extensions.AI" preserve="all" />
+  <assembly fullname="Microsoft.Extensions.AI.Abstractions" preserve="all" />
+  <assembly fullname="Microsoft.Extensions.AI.OpenAI" preserve="all" />
+  <assembly fullname="OpenAI" preserve="all" />
+  <assembly fullname="System.ClientModel" preserve="all" />
+  <assembly fullname="Sensei.Vendor.Microsoft.Bcl.AsyncInterfaces" preserve="all" />
+  <assembly fullname="Sensei.Vendor.Microsoft.Extensions.DependencyInjection.Abstractions" preserve="all" />
+  <assembly fullname="Sensei.Vendor.Microsoft.Extensions.Logging.Abstractions" preserve="all" />
+  <assembly fullname="Sensei.Vendor.System.ComponentModel.Annotations" preserve="all" />
+  <assembly fullname="Sensei.Vendor.System.Diagnostics.DiagnosticSource" preserve="all" />
+  <assembly fullname="Sensei.Vendor.System.Runtime.CompilerServices.Unsafe" preserve="all" />
+  <assembly fullname="Sensei.Vendor.System.Text.Encodings.Web" preserve="all" />
+  <assembly fullname="Sensei.Vendor.System.Text.Json" preserve="all" />
+  <assembly fullname="System.Text.Json" preserve="all" />
+</linker>
