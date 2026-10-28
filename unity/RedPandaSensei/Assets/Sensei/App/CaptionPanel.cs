@@ -18,6 +18,7 @@ namespace Sensei.App
             text = gameObject.AddComponent<TextMeshPro>();
             text.font = Resources.Load<TMP_FontAsset>("Fonts/NotoSansJP");
             text.fontSize = 0.45f; text.richText = false; text.alignment = TextAlignmentOptions.Center; text.color = Color.white;
+            text.enableAutoSizing = true; text.fontSizeMin = 0.10f; text.fontSizeMax = 0.45f;
             text.rectTransform.sizeDelta = PanelLayout.Caption.Size;
             text.textWrappingMode = TextWrappingModes.Normal;
             transform.localPosition = PanelLayout.Caption.Centre;
