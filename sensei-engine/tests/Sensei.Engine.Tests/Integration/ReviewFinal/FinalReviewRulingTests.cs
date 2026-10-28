@@ -70,8 +70,8 @@ public sealed class OutboundAllowListTests
         await t.Engine.RunTurnAsync("one");
         await t.Engine.RunTurnAsync("two");
 
-        var assistant = chat.Requests[1].Messages.Single(m => m.Role == ChatRole.Assistant);
-        Assert.Equal("answer", Assert.IsType<TextContent>(Assert.Single(assistant.Contents)).Text);
+        Assert.DoesNotContain(chat.Requests[1].Messages, m => m.Role == ChatRole.Assistant);
+        Assert.Contains(chat.Requests[1].Messages, m => m.Text.Contains("learner_transcript: one", StringComparison.Ordinal));
         Assert.All(chat.Requests[1].Messages.SelectMany(m => m.Contents), c => Assert.IsNotType(foreign.GetType(), c));
         var note = Assert.Single(trace.Entries, e => e.Tool == "engine:outbound_content");
         Assert.True(note.Arguments.Contains(foreign.GetType().FullName!, StringComparison.Ordinal), kind + ": " + note.Arguments);
@@ -135,21 +135,8 @@ public sealed class OutboundAllowListTests
         var sent = OutboundMessages.Sanitized(messages, Known, notes);
 
         var clean = (FunctionCallContent)sent[0].Contents[0];
-        object? walk = clean.Arguments!["deep"];
-        var levels = 0;
-        while (walk is not string)
-        {
-            walk = walk switch
-            {
-                List<object?> list => list.Single(),
-                Dictionary<string, object?> map => map["k"],
-                _ => throw new Xunit.Sdk.XunitException("unexpected node " + walk?.GetType()),
-            };
-            levels++;
-        }
-        Assert.Equal(300, levels);
-        Assert.Equal("[redacted]", walk);
-        Assert.Empty(notes);
+        Assert.Empty(clean.Arguments!);
+        Assert.Equal("arguments nested over 32 levels (replaced by an empty object)", Assert.Single(notes));
     }
 
     [Fact]
@@ -197,7 +184,8 @@ public sealed class OutboundAllowListTests
         Assert.Equal(TurnStatuses.Completed, (await t.Engine.RunTurnAsync("two").WaitAsync(TimeSpan.FromSeconds(10))).Status);
 
         var body = server.Requests[1].Body;
-        Assert.Contains("answer for the learner", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("answer for the learner", body, StringComparison.Ordinal);
+        Assert.Contains("learner_transcript: one", body, StringComparison.Ordinal);
         Assert.DoesNotContain("image_url", body, StringComparison.Ordinal);
         Assert.DoesNotContain("picture.png", body, StringComparison.Ordinal);
     }

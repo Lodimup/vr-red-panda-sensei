@@ -8,6 +8,7 @@ using OpenAI.Chat;
 using Sensei.Engine.Events;
 using Sensei.Engine.Json;
 using Sensei.Engine.Tools;
+using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Agent;
 
@@ -90,7 +91,7 @@ internal sealed class EngineFunctionInvoker
         if (tool != "show_hint") return false;
         try
         {
-            using var doc = JsonDocument.Parse(argumentsJson);
+            using var doc = JsonDocument.Parse(argumentsJson, new JsonDocumentOptions { MaxDepth = JsonRedaction.WalkDepth(JsonRedaction.MaxFinalValues) });
             return doc.RootElement.ValueKind == JsonValueKind.Object
                    && doc.RootElement.TryGetProperty("speak", out var speak)
                    && speak.ValueKind == JsonValueKind.True;

@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sensei.Engine.Tests", "test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sensei.Engine.Eval", "src\Sensei.Engine.Eval\Sensei.Engine.Eval.csproj", "{A31CA104-C1DF-48F8-96D8-80037D79BC3E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sensei.Engine.CycleProbe", "tests\Sensei.Engine.CycleProbe\Sensei.Engine.CycleProbe.csproj", "{F3973CD4-40BF-489D-A823-40A9672C06B9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -73,6 +75,18 @@ Global
 		{A31CA104-C1DF-48F8-96D8-80037D79BC3E}.Release|x64.Build.0 = Release|Any CPU
 		{A31CA104-C1DF-48F8-96D8-80037D79BC3E}.Release|x86.ActiveCfg = Release|Any CPU
 		{A31CA104-C1DF-48F8-96D8-80037D79BC3E}.Release|x86.Build.0 = Release|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Debug|x64.Build.0 = Debug|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Debug|x86.Build.0 = Debug|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Release|x64.ActiveCfg = Release|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Release|x64.Build.0 = Release|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Release|x86.ActiveCfg = Release|Any CPU
+		{F3973CD4-40BF-489D-A823-40A9672C06B9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -82,5 +96,6 @@ Global
 		{E991C102-BD98-4035-9DF4-232DD303B7D7} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{E0FF0A71-AB33-4148-AA55-1CF456FA99F0} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{A31CA104-C1DF-48F8-96D8-80037D79BC3E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{F3973CD4-40BF-489D-A823-40A9672C06B9} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

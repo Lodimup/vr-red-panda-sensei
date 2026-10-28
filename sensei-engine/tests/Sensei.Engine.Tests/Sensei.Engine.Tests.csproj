@@ -26,6 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Sensei.Engine/Sensei.Engine.csproj" />
     <ProjectReference Include="../../src/Sensei.Engine.Cli/Sensei.Engine.Cli.csproj" />
+    <ProjectReference Include="../Sensei.Engine.CycleProbe/Sensei.Engine.CycleProbe.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

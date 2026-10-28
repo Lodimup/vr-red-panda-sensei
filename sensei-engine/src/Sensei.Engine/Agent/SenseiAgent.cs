@@ -39,7 +39,7 @@ internal sealed class SenseiAgent : IAgentRunner
         {
             var dynamicTools = new List<AITool>();
             var offered = core.Tools.Standard;
-            var limiter = new RoundLimitingChatClient(Guarded(provider, core), core, _renderer, () => _active, dynamicTools, offered.Select(t => t.Name), RaiseState);
+            var limiter = new RoundLimitingChatClient(Guarded(provider, core, out var onWire), core, _renderer, () => _active, dynamicTools, offered.Select(t => t.Name), RaiseState, onWire);
             var persisted = new ChatClientBuilder(limiter).UsePerServiceCallChatHistoryPersistence().Build();
             var invoker = new EngineFunctionInvoker(core, () => _active, RaiseState);
             var functions = new FunctionInvokingChatClient(persisted)
@@ -52,7 +52,7 @@ internal sealed class SenseiAgent : IAgentRunner
             _history = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
             {
                 ChatReducer = new LearnerBoundaryReducer(),
-                ProvideOutputMessageFilter = DropBlankAssistantMessages,
+                ProvideOutputMessageFilter = DropAssistantText,
             });
             _agent = new ChatClientAgent(functions, new ChatClientAgentOptions
             {
@@ -75,9 +75,10 @@ internal sealed class SenseiAgent : IAgentRunner
     /// <summary>
     /// D6: the client the round limiter talks to. A client built by <see cref="ChatClientFactory"/> already ends in the byte guard of its
     /// request pipeline (it is found through <c>GetService</c>, also through wrappers that forward it); the engine only tells that guard
-    /// which secrets it knows. Any other client gets the serialized-request guard.
+    /// which secrets it knows, and every function result goes to it as JSON text (<paramref name="onWire"/>). Any other client gets the
+    /// serialized-request guard and the results as they are.
     /// </summary>
-    private static IChatClient Guarded(IChatClient provider, EngineCore core)
+    private static IChatClient Guarded(IChatClient provider, EngineCore core, out bool onWire)
     {
         OutboundGuard? guard = null;
         try
@@ -88,6 +89,7 @@ internal sealed class SenseiAgent : IAgentRunner
         {
             // A client that cannot be asked is a client without a guard.
         }
+        onWire = guard is not null;
         if (guard is null) return new SerializedRequestGuard(provider, core.Secrets);
         guard.Attach(core.Secrets);
         return provider;
@@ -208,9 +210,30 @@ internal sealed class SenseiAgent : IAgentRunner
         ErrorDetail = detail,
     };
 
-    /// <summary>The round limiter's empty answer (and an empty answer from a provider) is not history worth sending back.</summary>
-    private static IEnumerable<ChatMessage> DropBlankAssistantMessages(IEnumerable<ChatMessage> messages) =>
-        messages.Where(m => m.Role != ChatRole.Assistant
-                            || m.Contents.OfType<FunctionCallContent>().Any()
-                            || !string.IsNullOrWhiteSpace(m.Text));
+    /// <summary>
+    /// S129: history keeps the model's tool calls, never its plain text (that is <c>unspoken_text</c>, trace only, S67).
+    /// Every assistant <see cref="TextContent"/> is removed from a copy of its message (the stored message is not
+    /// changed), a call keeps its place and id, and an assistant message left with no content (the round limiter's
+    /// empty answer included) is dropped.
+    /// </summary>
+    private static IEnumerable<ChatMessage> DropAssistantText(IEnumerable<ChatMessage> messages)
+    {
+        foreach (var message in messages)
+        {
+            if (message.Role != ChatRole.Assistant)
+            {
+                yield return message;
+                continue;
+            }
+            if (message.Contents.Any(c => c is TextContent))
+            {
+                var kept = message.Contents.Where(c => c is not TextContent).ToList();
+                if (kept.Count == 0) continue;
+                var copy = message.Clone();
+                copy.Contents = kept;
+                yield return copy;
+            }
+            else if (message.Contents.Count > 0) yield return message;
+        }
+    }
 }

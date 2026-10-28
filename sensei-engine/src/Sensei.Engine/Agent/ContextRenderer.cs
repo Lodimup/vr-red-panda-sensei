@@ -25,6 +25,8 @@ internal sealed class ContextRenderer
 
     private static readonly Regex TagBreakout = new(@"<(\s*/?\s*)(" + SystemPrompt.LearnerDataTag + ")", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    private static readonly JsonSerializerOptions NodeMaxDepthOptions = new JsonSerializerOptions { MaxDepth = Sensei.Engine.Trace.JsonRedaction.ClrNestingLimit };
+
     private readonly EngineCore _core;
 
     public ContextRenderer(EngineCore core)
@@ -183,7 +185,7 @@ internal sealed class ContextRenderer
                 instance.Remove("reading");
                 instance.Remove("english");
             }
-        return node.ToJsonString();
+        return node.ToJsonString(NodeMaxDepthOptions);
     }
 
     /// <summary>The active task without its bookkeeping (assistance baseline, start and revision ids).</summary>
@@ -192,7 +194,7 @@ internal sealed class ContextRenderer
         var node = JsonSerializer.SerializeToNode(task, SenseiJsonContext.Default.TaskView)!.AsObject();
         foreach (var key in new[] { "assistance_baseline", "source_revision", "start_event_id", "predicates_since_event_id" })
             node.Remove(key);
-        return node.ToJsonString();
+        return node.ToJsonString(NodeMaxDepthOptions);
     }
 
     private static string Quote(string text) => JsonSerializer.Serialize(text, SenseiJsonContext.Default.String);

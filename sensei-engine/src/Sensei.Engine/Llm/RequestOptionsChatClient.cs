@@ -35,6 +35,7 @@ internal sealed class RequestOptionsChatClient : DelegatingChatClient
     private readonly string _provider;
     private readonly string _effort;
     private readonly int _maxOutputTokens;
+    private const int SchemaMaxDepth = 64;
     private readonly OutboundGuard _guard;
     private readonly ConditionalWeakTable<AITool, string> _compactSchemas = new();
 
@@ -92,7 +93,7 @@ internal sealed class RequestOptionsChatClient : DelegatingChatClient
         _compactSchemas.GetValue(function, f =>
         {
             using var stream = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(stream))
+            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { MaxDepth = SchemaMaxDepth }))
                 ((AIFunctionDeclaration)f).JsonSchema.WriteTo(writer);
             return Encoding.UTF8.GetString(stream.ToArray());
         });

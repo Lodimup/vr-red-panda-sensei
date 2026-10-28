@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
+using Sensei.Engine.Trace;
 
 namespace Sensei.Engine.Agent;
 
@@ -17,6 +18,9 @@ namespace Sensei.Engine.Agent;
 /// </summary>
 internal static class HistoryCompactor
 {
+    /// <summary>Nesting accepted when a stored result is read; the engine's own results are flat, so anything deeper is left as it is.</summary>
+    private const int MaxDepth = JsonRedaction.ClrNestingLimit;
+
     /// <summary>A compacted copy of <paramref name="messages"/>; the originals are not modified.</summary>
     public static List<ChatMessage> Compact(IReadOnlyList<ChatMessage> messages)
     {
@@ -39,11 +43,13 @@ internal static class HistoryCompactor
 
     private static AIContent CompactResult(FunctionResultContent result)
     {
-        var element = result.Result is JsonElement e ? e : TryParse(result.Result?.ToString());
-        if (element is not { ValueKind: JsonValueKind.Object } json) return result;
+        // Only a result the engine stored (a JSON element or its text) is read; any other object is never serialized here.
+        var element = result.Result switch { JsonElement e => e, string text => TryParse(text), _ => (JsonElement?)null };
+        // Only the engine's own tool results (they all carry a status) are shrunk; any other shape goes back exactly as it was.
+        if (element is not { ValueKind: JsonValueKind.Object } json || !json.TryGetProperty("status", out _)) return result;
 
         using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
+        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { MaxDepth = MaxDepth + 2 }))
         {
             writer.WriteStartObject();
             Copy(json, "status", writer, skipEmptyArray: false);
@@ -52,7 +58,7 @@ internal static class HistoryCompactor
             Copy(json, "affected_ids", writer, skipEmptyArray: true);
             writer.WriteEndObject();
         }
-        using var document = JsonDocument.Parse(stream.ToArray());
+        using var document = JsonDocument.Parse(stream.ToArray(), new JsonDocumentOptions { MaxDepth = MaxDepth + 2 });
         return new FunctionResultContent(result.CallId, document.RootElement.Clone());
     }
 
@@ -69,7 +75,7 @@ internal static class HistoryCompactor
         if (string.IsNullOrWhiteSpace(text)) return null;
         try
         {
-            using var document = JsonDocument.Parse(text);
+            using var document = JsonDocument.Parse(text, new JsonDocumentOptions { MaxDepth = MaxDepth });
             return document.RootElement.Clone();
         }
         catch (JsonException)

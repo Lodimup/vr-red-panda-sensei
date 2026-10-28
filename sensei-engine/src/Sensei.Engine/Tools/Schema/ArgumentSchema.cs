@@ -20,6 +20,9 @@ namespace Sensei.Engine.Tools.Schema;
 /// </summary>
 public sealed class ArgumentSchema
 {
+    /// <summary>The deepest a tool-call arguments document may nest, the arguments object itself being level 1: the parser's limit (S21), and the depth past which an outbound call's arguments are replaced by an empty object (S133).</summary>
+    internal const int MaxArgumentDepth = 32;
+
     private static readonly HashSet<string> ValidationKeywords = new(StringComparer.Ordinal)
     {
         "type", "properties", "required", "additionalProperties", "enum", "minLength", "maxLength", "pattern",
@@ -68,7 +71,7 @@ public sealed class ArgumentSchema
         }
         try
         {
-            using var doc = JsonDocument.Parse(json!, new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow, MaxDepth = 32 });
+            using var doc = JsonDocument.Parse(json!, new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow, MaxDepth = MaxArgumentDepth });
             element = doc.RootElement.Clone();
             if (!AllStringsDecode(element))
             {
