@@ -1,5 +1,5 @@
 #nullable enable
-using System.Text.RegularExpressions;
+using Sensei.App.Core;
 using System.Threading;
 using System.Threading.Tasks;
 using Sensei.Engine.Speech;
@@ -17,11 +17,7 @@ namespace Sensei.Unity
             this.debugText = debugText;
             this.secret = secret;
         }
-        public static string Redact(string text, string? secret)
-        {
-            if (!string.IsNullOrEmpty(secret)) text = text.Replace(secret, "[redacted]");
-            return Regex.Replace(text, @"sk-[A-Za-z0-9_-]{8,}", "[redacted]");
-        }
+        public static string Redact(string text, string? secret) => LogRedactor.Redact(text, secret);
         public Task<SpeechOutcome> SpeakAsync(SpeechRequest request, CancellationToken ct)
         {
             foreach (var segment in request.Segments)

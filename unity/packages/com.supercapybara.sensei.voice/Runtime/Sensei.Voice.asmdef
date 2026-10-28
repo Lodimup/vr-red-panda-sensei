@@ -1,6 +1,6 @@
 {
   "name": "Sensei.Voice",
-  "references": [],
+  "references": ["Sensei.App.Core"],
   "overrideReferences": true,
   "precompiledReferences": [
     "sherpa-onnx.dll",

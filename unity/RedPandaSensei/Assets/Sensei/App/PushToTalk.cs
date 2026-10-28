@@ -65,7 +65,7 @@ namespace Sensei.App
                 var watch = Stopwatch.StartNew(); var transcript = await recognizer!.TranscribeAsync(samples, CancellationToken.None);
                 if (epoch != captureEpoch) return;
                 string log = $"RPS_ASR ms={watch.ElapsedMilliseconds} chars={transcript.Length}";
-                if (debug) log += " text=" + LogSpeechOutput.Redact(transcript, secret).Replace('\n', ' ').Replace('\r', ' ');
+                if (debug) log += " text=" + LogRedactor.Redact(transcript, secret).Replace('\n', ' ').Replace('\r', ' ');
                 Debug.Log(log);
                 if (!TranscriptGate.ShouldSend(seconds, transcript)) { line.Set("Didn't catch that"); return; }
                 line.Set("You: " + transcript); await host.RunTranscript(transcript);

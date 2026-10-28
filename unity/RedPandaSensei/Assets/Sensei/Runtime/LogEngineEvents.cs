@@ -1,3 +1,4 @@
+using Sensei.App.Core;
 #nullable enable
 using System.Collections.Generic;
 using System;
@@ -22,12 +23,12 @@ namespace Sensei.Unity
         private string Quote(string? value)
         {
             if (value == null) return "null";
-            var json = JsonUtility.ToJson(new JsonText { value = LogSpeechOutput.Redact(value, secret) });
+            var json = JsonUtility.ToJson(new JsonText { value = LogRedactor.Redact(value, secret) });
             return json.Substring(9, json.Length - 10);
         }
         private void Log(string method, string json)
         {
-            Debug.Log(debugText ? $"RPS_EVENT {method} {LogSpeechOutput.Redact(json, secret).Replace('\n', ' ').Replace('\r', ' ')}" : $"RPS_EVENT {method}");
+            Debug.Log(debugText ? $"RPS_EVENT {method} {LogRedactor.Redact(json, secret).Replace('\n', ' ').Replace('\r', ' ')}" : $"RPS_EVENT {method}");
         }
 
         public void OnSceneChanged(SceneEvent e, SceneSnapshot scene) => Log(nameof(OnSceneChanged),

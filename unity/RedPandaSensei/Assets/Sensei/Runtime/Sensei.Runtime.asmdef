@@ -1,6 +1,7 @@
 {
   "name": "Sensei.Runtime",
   "references": [
+    "Sensei.App.Core",
     "Unity.TextMeshPro"
   ],
   "overrideReferences": true,

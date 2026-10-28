@@ -40,7 +40,7 @@ namespace Sensei.App
         }
         public async Task<SpeechOutcome> SpeakAsync(SpeechRequest request, CancellationToken ct)
         {
-            int presented = 0; var id = request.GenerationId;
+            int presented = 0; bool stopped = false; var id = request.GenerationId;
             lock (gate)
             {
                 if (ct.IsCancellationRequested || id < generation) return new SpeechOutcome(SpeechStatuses.Cancelled, null, 0);
@@ -51,9 +51,9 @@ namespace Sensei.App
             {
                 presented = await SpeechPipeline.PlayAsync(request.Segments,
                     segment => Synthesize(segment, speed, ct),
-                    (segment, audio) => { var playing = player.PlayAsync(audio, id, ct); queue.Post(() => { if (Current(id, ct)) { CurrentCaptions = request.EffectiveCaptions; SegmentStarted?.Invoke(segment); } }); return playing; },
+                    async (segment, audio) => { var outcome = await player.PlayAsync(audio, id, ct, () => queue.Post(() => { if (Current(id, ct)) { CurrentCaptions = request.EffectiveCaptions; SegmentStarted?.Invoke(segment); } })); if (outcome != PlayOutcome.Completed) stopped = true; return outcome; },
                     () => Current(id, ct), ct, count => presented = count);
-                if (!Current(id, ct) || presented != request.Segments.Count) return new SpeechOutcome(SpeechStatuses.Cancelled, null, presented);
+                if (stopped || !Current(id, ct) || presented != request.Segments.Count) return new SpeechOutcome(SpeechStatuses.Cancelled, null, presented);
                 return new SpeechOutcome(SpeechStatuses.Completed, null, presented);
             }
             catch (OperationCanceledException) { return new SpeechOutcome(SpeechStatuses.Cancelled, null, presented); }
