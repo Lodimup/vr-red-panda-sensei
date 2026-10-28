@@ -51,6 +51,7 @@ internal sealed class ContextRenderer
         int reviewDueCount;
         string languageMode;
         int callsLeft;
+        string learnerHistory;
         lock (_core.Sync)
         {
             var profile = _core.Learner.Profile;
@@ -68,6 +69,10 @@ internal sealed class ContextRenderer
             recommendationCount = EvidenceRules.ComputeRecommendations(profile.Evidence).Count;
             reviewDueCount = EvidenceRules.ComputeReviewDue(profile.Evidence, _core.SessionId).Count;
             callsLeft = scope.Turn.RemainingCalls;
+            var earlier = profile.Evidence.Where(e => e.SessionId != _core.SessionId).OrderByDescending(e => e.At).ToList();
+            learnerHistory = earlier.Count == 0
+                ? "new (no practice in earlier sessions)"
+                : $"returning ({earlier.Select(e => e.SessionId).Distinct().Count().ToString(CultureInfo.InvariantCulture)} earlier sessions with practice; last practice {System.Math.Max(0, (int)(_core.Clock.GetUtcNow() - earlier[0].At).TotalDays).ToString(CultureInfo.InvariantCulture)} days ago; recently practiced: {string.Join(", ", earlier.Select(e => e.Target.Key).Distinct().Take(5).Select(Safe))})";
         }
 
         var round = scope.Rounds == 0 ? 1 : scope.Rounds;
@@ -76,6 +81,7 @@ internal sealed class ContextRenderer
         var sb = new StringBuilder();
         sb.AppendLine("## Current state (engine-owned, refreshed before every model request)");
         if (scope.Request.EventKind is { } kind) sb.AppendLine($"- player event this turn: {kind}. {EventMeaning(kind)}");
+        sb.AppendLine($"- learner history: {learnerHistory}");
         sb.AppendLine($"- tool calls remaining this turn: {callsLeft.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine($"- model rounds remaining after this request: {roundsLeft.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine(round == 1 && scope.Request.EventKind is not null
