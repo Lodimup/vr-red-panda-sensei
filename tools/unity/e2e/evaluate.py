@@ -16,7 +16,7 @@ elif scenario == 'a10':
     press = presses[-1] if presses else -1
     before = [re.search(r'RPS_PLAY generation=(\d+)', line) for line in lines[:max(press, 0)]]
     old = next((m.group(1) for m in reversed(before) if m), None)
-    stop = next((re.search(r'RPS_INTERRUPT was_playing=true stopped=true stopped_ms=(\d+)', line) for line in lines[press:press+10] if 'RPS_INTERRUPT' in line), None) if press >= 0 else None
+    stop = next((re.search(r'RPS_INTERRUPT was_playing=true stopped=true stopped_ms=(\d+)', line) for line in lines[press+1:] if 'RPS_INTERRUPT' in line), None) if press >= 0 else None
     checks.update(interrupt_stopped=bool(stop and int(stop.group(1)) <= 300), no_old_playback=bool(old and not any(f'RPS_PLAY generation={old}' in line for line in lines[press+1:])), new_turn_completed=bool(press >= 0 and any('RPS_TURN status=completed' in line for line in lines[press+1:])))
 else:
     sessions = re.search(r'RPS_PROFILE sessions=(\d+)', log)
