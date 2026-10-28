@@ -1,6 +1,6 @@
 {
   "name": "Sensei.App.Tests",
-  "references": ["Sensei.App.Core"],
+  "references": ["Sensei.App.Core", "Sensei.App", "Unity.TextMeshPro"],
   "includePlatforms": ["Editor"],
   "optionalUnityReferences": ["TestAssemblies"],
   "overrideReferences": true,

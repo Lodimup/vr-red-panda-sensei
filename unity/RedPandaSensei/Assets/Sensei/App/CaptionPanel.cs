@@ -34,6 +34,7 @@ namespace Sensei.App
             }
             text.text = lines.ToString();
         }
+        public void ShowError(string message) { if (clear != null) StopCoroutine(clear); text.text = message; clear = StartCoroutine(ClearLater()); }
         public void End() { if (clear != null) StopCoroutine(clear); clear = StartCoroutine(ClearLater()); }
         private IEnumerator ClearLater() { yield return new WaitForSeconds(4); text.text = ""; clear = null; }
         private void LateUpdate() { var direction = head.position - transform.position; direction.y = 0; if (direction.sqrMagnitude > 0.001f) transform.rotation = Quaternion.LookRotation(-direction); }
