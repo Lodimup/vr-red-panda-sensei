@@ -226,6 +226,9 @@ internal sealed class CliApp
                 case "/summary":
                     _output.Line("summary: " + JsonSerializer.Serialize(_engine.GetSessionSummary(), SenseiJsonContext.Default.SessionSummary));
                     break;
+                case "/event":
+                    await StartTurnAsync(ct => _engine.RunPlayerEventTurnAsync(rest, ct), wait).ConfigureAwait(false);
+                    break;
                 case "/correct":
                     if (rest.Length == 0) Fail("usage: /correct <text>");
                     else await StartTurnAsync(ct => _engine.CorrectLastTranscriptAsync(rest, ct), wait).ConfigureAwait(false);
@@ -269,6 +272,7 @@ internal sealed class CliApp
         "/pref <field> <value>         set a preference (it is pinned)\n" +
         "/profile                      show the learner profile\n" +
         "/summary                      show the session summary\n" +
+        "/event <kind>                 run a player event turn\n" +
         "/correct <text>               correct the last transcript\n" +
         "/cancel                       cancel the running turn\n" +
         "/reset                        reset the profile\n" +

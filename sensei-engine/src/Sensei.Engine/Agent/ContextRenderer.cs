@@ -77,7 +77,9 @@ internal sealed class ContextRenderer
         sb.AppendLine("## Current state (engine-owned, refreshed before every model request)");
         sb.AppendLine($"- tool calls remaining this turn: {callsLeft.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine($"- model rounds remaining after this request: {roundsLeft.ToString(CultureInfo.InvariantCulture)}");
-        sb.AppendLine(round == 1
+        sb.AppendLine(round == 1 && scope.Request.EventKind == "area_placed"
+            ? "- this is the first request of the turn: respond only if something needs saying."
+            : round == 1
             ? "- this is the first request of the turn: `speak` first, then every call you can already make, all in this one response."
             : "- the results of your earlier calls are in the conversation above. Make only the calls that still depend on them; if none do, finish now with no tool calls and no text. Do not repeat anything you already said this turn.");
         sb.AppendLine($"- the learner's line contains Japanese (kana or kanji): {(containsJapanese ? "yes — record the attempt in this turn's first response unless it is only a greeting or a request for a translation" : "no (romanized Japanese still counts as Japanese)")}");
@@ -118,7 +120,9 @@ internal sealed class ContextRenderer
             lines.Add("previous_turn: it was interrupted before it finished");
             if (scope.InterruptedTranscript is not null) lines.Add($"interrupted_learner_transcript: {Safe(scope.InterruptedTranscript)}");
         }
-        lines.Add($"learner_transcript: {Safe(request.Transcript)}");
+        lines.Add(request.EventKind is null
+            ? $"learner_transcript: {Safe(request.Transcript)}"
+            : $"Player event: {request.EventKind}. {EventMeaning(request.EventKind)}");
 
         List<string> events;
         Dictionary<string, string>? notes = null;
@@ -157,6 +161,16 @@ internal sealed class ContextRenderer
 
         return WrapBlock(lines);
     }
+
+    private static string EventMeaning(string kind) => kind switch
+    {
+        "session_start" => "The learner just started a session and placed the practice area. Greet them. For a new profile, ask what Japanese they already know. For a returning learner, offer to continue from their review targets.",
+        "help_hint" => "The learner pressed the Hint button. Give one hint for the active task with show_hint, or a useful phrase if there is no task.",
+        "help_repeat" => "The learner pressed the Repeat button. Replay your last utterance with replay_speech.",
+        "help_english" => "The learner asked for an English explanation of what is happening right now.",
+        "area_placed" => "The learner moved the practice area. The scene did not change. Do not respond unless something needs saying.",
+        _ => throw new System.ArgumentOutOfRangeException(nameof(kind)),
+    };
 
     private string Safe(string text) => Neutralize(_core.Secrets.Sanitize(text) ?? "");
 
