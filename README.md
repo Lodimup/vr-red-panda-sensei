@@ -25,25 +25,13 @@ adb install -r <release.apk>
 bash tools/unity/push-env.sh
 ```
 
-`push-env.sh` reads only `[openrouter_deepseek].api_key` in `$HOME/KEYS.toml`; it does not accept a key via an environment variable or prompt. It streams the configuration to the app's external files directory. Set `QUEST_SERIAL` if multiple devices are connected.
-
-Without that file, use this alternative:
-
-1. Install the APK as above and obtain an OpenRouter API key.
-2. Run the following in zsh, enter the key when prompted, and press Enter. The key is streamed to the headset; no host key file is created. The app requires `sensei.env` on the headset.
+`push-env.sh` takes the OpenRouter key from `SENSEI_LLM_API_KEY` if it is set; otherwise it asks for it (input hidden). The key is streamed to the headset's `sensei.env` in the app's external files directory; no key file is written on your computer. Set `QUEST_SERIAL` if several devices are connected.
 
 ```bash
-read -rs 'RPS_KEY?OpenRouter API key: '
-export RPS_KEY
-adb shell 'mkdir -p /sdcard/Android/data/com.supercapybara.redpandasensei/files'
-adb shell 'cat > /sdcard/Android/data/com.supercapybara.redpandasensei/files/sensei.env' <<EOF_KEY
-SENSEI_LLM_PROVIDER=openrouter
-SENSEI_LLM_API_KEY=$RPS_KEY
-EOF_KEY
-unset RPS_KEY
+SENSEI_LLM_API_KEY=<your-key> bash tools/unity/push-env.sh   # or run it without the variable and type the key
 ```
 
-3. Launch Red Panda Sensei in the headset. An internet connection and a working OpenRouter key are needed for conversation.
+Then launch Red Panda Sensei in the headset. An internet connection and a working OpenRouter key are needed for conversation.
 
 ## Build it
 
