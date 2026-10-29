@@ -110,7 +110,7 @@ public sealed class LlmSettingsTests
     public void S5_to_string_shows_provider_model_base_url_and_that_a_key_is_set()
     {
         var s = LlmSettings.FromEnvironment(Env(("SENSEI_LLM_API_KEY", Key)));
-        Assert.Equal("provider=openrouter model=meta/muse-spark-1.3-contributor base_url=https://openrouter.ai/api/v1 reasoning_effort=low max_output_tokens=2000 api_key=[set]", s.ToString());
+        Assert.Equal("provider=openrouter model=meta/muse-spark-1.3-contributor base_url=https://openrouter.ai/api/v1 reasoning_effort=minimal max_output_tokens=2000 api_key=[set]", s.ToString());
     }
 
     [Fact]

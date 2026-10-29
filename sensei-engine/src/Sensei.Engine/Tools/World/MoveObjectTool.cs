@@ -28,7 +28,7 @@ public sealed class MoveObjectTool : SenseiTool<MoveObjectArgs>
 {
     public override string Name => "move_object";
 
-    public override string Description => "Move one object to a region or into a container, to fulfil the learner's request, demonstrate, or arrange the scene.";
+    public override string Description => "Move an object to a region or container.";
 
     public override bool IsMutating => true;
 

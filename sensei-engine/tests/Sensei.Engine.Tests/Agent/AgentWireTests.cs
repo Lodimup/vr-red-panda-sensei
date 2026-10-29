@@ -39,7 +39,7 @@ public sealed class AgentWireTests
         Assert.Equal("Bearer " + Key, request.Authorization);
         var body = request.Json;
         Assert.Equal("wire-model", body.GetProperty("model").GetString());
-        Assert.Equal(t.Engine.ToolNames.ToArray(), body.GetProperty("tools").EnumerateArray().Select(x => x.GetProperty("function").GetProperty("name").GetString()!).ToArray());
+        Assert.Equal(t.Engine.ToolNames.Where(n => n != "update_challenge").ToArray(), body.GetProperty("tools").EnumerateArray().Select(x => x.GetProperty("function").GetProperty("name").GetString()!).ToArray());
         var messages = Messages(request).EnumerateArray().ToList();
         Assert.Equal("system", messages[0].GetProperty("role").GetString());
         Assert.Contains("ghost red panda", messages[0].GetProperty("content").GetString());

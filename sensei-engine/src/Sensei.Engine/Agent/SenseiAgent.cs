@@ -38,10 +38,11 @@ internal sealed class SenseiAgent : IAgentRunner
         if (core.Options.ChatClient is { } provider)
         {
             var dynamicTools = new List<AITool>();
+            var unavailable = new HashSet<string>(StringComparer.Ordinal);
             var offered = core.Tools.Standard;
-            var limiter = new RoundLimitingChatClient(Guarded(provider, core, out var onWire), core, _renderer, () => _active, dynamicTools, offered.Select(t => t.Name), RaiseState, onWire);
+            var limiter = new RoundLimitingChatClient(Guarded(provider, core, out var onWire), core, _renderer, () => _active, dynamicTools, offered.Select(t => t.Name), RaiseState, onWire, unavailable);
             var persisted = new ChatClientBuilder(limiter).UsePerServiceCallChatHistoryPersistence().Build();
-            var invoker = new EngineFunctionInvoker(core, () => _active, RaiseState);
+            var invoker = new EngineFunctionInvoker(core, () => _active, RaiseState, unavailable);
             var functions = new FunctionInvokingChatClient(persisted)
             {
                 AllowConcurrentInvocation = false,
@@ -157,12 +158,12 @@ internal sealed class SenseiAgent : IAgentRunner
         lock (_core.Sync) _eventMark = _core.World.LastEventId;
     }
 
-    /// <summary>S65: settle unanswered calls, make room so the incoming learner message is the 12th at most, and shrink what the finished turns left behind.</summary>
+    /// <summary>S65: settle unanswered calls, make room so the incoming learner message is the 12th at most, and retain stored history within its learner-turn limit.</summary>
     private void PrepareHistory(ChatClientAgentSession session, bool isEvent)
     {
         var messages = _history!.GetMessages(session);
         HistorySettler.Settle(messages);
-        _history.SetMessages(session, HistoryCompactor.Compact(LearnerBoundaryReducer.Trim(messages, LearnerBoundaryReducer.MaxLearnerTurns - (isEvent ? 0 : 1))));
+        _history.SetMessages(session, LearnerBoundaryReducer.Trim(messages, LearnerBoundaryReducer.MaxLearnerTurns - (isEvent ? 0 : 1)));
     }
 
     private void RaiseState(TurnScope scope, string state)

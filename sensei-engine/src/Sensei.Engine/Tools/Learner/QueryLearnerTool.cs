@@ -20,7 +20,7 @@ public sealed class QueryLearnerTool : SenseiTool<QueryLearnerArgs>
 {
     public override string Name => "query_learner";
 
-    public override string Description => "Read the learner model: band, hidden working level, support, labels per target, review queue, recommendations and notes.";
+    public override string Description => "Read learner profile, evidence and recommendations.";
 
     protected override string SchemaJson => """
         {

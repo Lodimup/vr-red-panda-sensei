@@ -441,6 +441,20 @@ public sealed class StartChallengeTests
         Assert.True((await t.CallAsync("start_challenge", StartJson(Predicates(Obj("apple_1", "right"))))).IsSuccess);
     }
 
+    [Fact]
+    public async Task Discover_request_can_select_a_same_round_spawn_and_complete_on_delivery()
+    {
+        await using var t = await StartAsync();
+        Assert.True((await t.CallAsync("spawn_objects", SpawnJson(("water", "center", null)))).IsSuccess);
+        var args = "{\"family\":\"discover_request\",\"instruction\":{\"english\":\"Ask for water\"},\"skill_targets\":[{\"dimension\":\"vocabulary\",\"key\":\"water\"}],\"predicates\":[{\"type\":\"in_region\",\"selector\":{\"catalog_id\":\"water\"},\"region\":\"learner_hand\"}]}";
+        var start = await t.CallAsync("start_challenge", args);
+        Assert.True(start.IsSuccess, start.Detail);
+        t.Engine.MarkRoundStart();
+        var move = await t.CallAsync("move_object", MoveJson("water_1", "fulfill_request", region: "learner_hand"));
+        Assert.True(move.IsSuccess, move.Detail);
+        Assert.Equal("completed", Data(move).GetProperty("task_status").GetString());
+    }
+
     // ------------------------------------------------------------------ S35d evaluation through tools and player actions
 
     [Fact]

@@ -20,11 +20,11 @@ public sealed class AgentHistoryTests
         for (var i = 0; i < 15; i++) await t.Engine.RunTurnAsync($"turn {i}");
 
         for (var k = 0; k < 15; k++)
-            Assert.Equal(Math.Min(k + 1, 12), UserMessages(chat.Requests[k]).Count);
+            Assert.Equal(Math.Min(k + 1, 5), UserMessages(chat.Requests[k]).Count);
         var last = UserMessages(chat.Requests[14]);
         Assert.Contains("learner_transcript: turn 14", last.Last().Text);
-        Assert.Contains("learner_transcript: turn 3", last.First().Text);
-        Assert.DoesNotContain(last, m => m.Text.Contains("learner_transcript: turn 2\n"));
+        Assert.Contains("learner_transcript: turn 10", last.First().Text);
+        Assert.DoesNotContain(last, m => m.Text.Contains("learner_transcript: turn 9\n"));
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public sealed class AgentHistoryTests
 
         var request = chat.Requests[chat.RequestCount - 1];
         Assert.Equal(ChatRole.User, request.Messages[0].Role);
-        Assert.Equal(12, UserMessages(request).Count);
+        Assert.Equal(5, UserMessages(request).Count);
         AssertNoUnansweredCalls(request);
         for (var i = 0; i < request.Messages.Count; i++)
             if (request.Messages[i].Role == ChatRole.Tool) Assert.Contains(request.Messages[i - 1].Contents, c => c is FunctionCallContent);

@@ -35,7 +35,7 @@ public sealed class ShowHintTool : SenseiTool<ShowHintArgs>
 {
     public override string Name => "show_hint";
 
-    public override string Description => "Show the learner a hint card (partial phrase, model answer, explanation, vocabulary card or translation), optionally reading it aloud; hints count as help.";
+    public override string Description => "Show a hint card; hints count as help.";
 
     protected override string SchemaJson => """
         {

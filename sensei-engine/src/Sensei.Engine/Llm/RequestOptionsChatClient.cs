@@ -27,7 +27,7 @@ namespace Sensei.Engine.Llm;
 /// Tools go out with their schema written compactly. The OpenAI adapter of Microsoft.Extensions.AI writes a function's
 /// schema indented, and the 16 tool schemas are about two thirds of the input of every request, so the tools are handed
 /// to the OpenAI client directly as <c>ChatTool</c>s with the schema text minified. The schema the engine validates
-/// against is untouched, and the tool definitions the model sees are the same.
+/// against is untouched; redundant validation metadata is removed from the provider-facing copy.
 /// </para>
 /// </remarks>
 internal sealed class RequestOptionsChatClient : DelegatingChatClient
@@ -94,9 +94,43 @@ internal sealed class RequestOptionsChatClient : DelegatingChatClient
         {
             using var stream = new MemoryStream();
             using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { MaxDepth = SchemaMaxDepth }))
-                ((AIFunctionDeclaration)f).JsonSchema.WriteTo(writer);
+                WriteWireSchema(writer, ((AIFunctionDeclaration)f).JsonSchema, f.Name);
             return Encoding.UTF8.GetString(stream.ToArray());
         });
+
+    private static void WriteWireSchema(Utf8JsonWriter writer, JsonElement node, string tool, string path = "")
+    {
+        if (node.ValueKind == JsonValueKind.Object)
+        {
+            writer.WriteStartObject();
+            foreach (var property in node.EnumerateObject())
+            {
+                if (property.Name == "description" && !KeepDescription(tool, path)) continue;
+                if (property.Name is "maxLength" or "minLength" or "minItems" or "maxItems" or "pattern" or "additionalProperties" or "minimum" or "maximum") continue;
+                writer.WritePropertyName(property.Name);
+                WriteWireSchema(writer, property.Value, tool, path + "/" + property.Name);
+            }
+            writer.WriteEndObject();
+        }
+        else if (node.ValueKind == JsonValueKind.Array)
+        {
+            writer.WriteStartArray();
+            foreach (var item in node.EnumerateArray()) WriteWireSchema(writer, item, tool, path);
+            writer.WriteEndArray();
+        }
+        else node.WriteTo(writer);
+    }
+
+    private static bool KeepDescription(string tool, string path)
+    {
+        if (tool == "speak" && path == "/properties/segments") return true;
+        if (tool != "start_challenge") return false;
+        if (path is "/properties/predicates" or "/properties/predicates/items") return true;
+        return path is "/properties/predicates/items/properties/type" or "/properties/predicates/items/properties/object_id"
+            or "/properties/predicates/items/properties/selector" or "/properties/predicates/items/properties/region"
+            or "/properties/predicates/items/properties/container_id" or "/properties/predicates/items/properties/count"
+            or "/properties/predicates/items/properties/comparison" or "/properties/predicates/items/properties/reference_id";
+    }
 
 #pragma warning disable SCME0001 // JsonPatch is the OpenAI SDK's way to send a field its typed options do not have.
     private void SetReasoning(ChatCompletionOptions raw)

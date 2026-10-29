@@ -18,7 +18,7 @@ public sealed class AnimateSenseiTool : SenseiTool<AnimateSenseiArgs>
 {
     public override string Name => "animate_sensei";
 
-    public override string Description => "Play one of Sensei's ghost red panda animations, optionally aimed at an object.";
+    public override string Description => "Play a Sensei animation, optionally targeting an object.";
 
     protected override string SchemaJson => """
         {

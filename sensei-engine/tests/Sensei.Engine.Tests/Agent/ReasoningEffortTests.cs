@@ -23,14 +23,15 @@ public sealed class ReasoningEffortTests
     public void S125_defaults_are_low_effort_and_2000_output_tokens()
     {
         var s = LlmSettings.FromEnvironment(Env());
-        Assert.Equal("low", s.ReasoningEffort);
+        Assert.Equal("minimal", s.ReasoningEffort);
         Assert.Equal(2000, s.MaxOutputTokens);
-        Assert.Equal("low", new LlmSettings("openrouter", Key).ReasoningEffort);
+        Assert.Equal("minimal", new LlmSettings("openrouter", Key).ReasoningEffort);
         Assert.Equal(2000, new LlmSettings("openrouter", Key).MaxOutputTokens);
     }
 
     [Theory]
     [InlineData("none")]
+    [InlineData("minimal")]
     [InlineData("low")]
     [InlineData("medium")]
     [InlineData("high")]
@@ -47,19 +48,18 @@ public sealed class ReasoningEffortTests
         Assert.Equal(640, s.MaxOutputTokens);
 
         var empty = LlmSettings.FromEnvironment(Env(("SENSEI_LLM_REASONING_EFFORT", "  "), ("SENSEI_LLM_MAX_OUTPUT_TOKENS", "")));
-        Assert.Equal("low", empty.ReasoningEffort);
+        Assert.Equal("minimal", empty.ReasoningEffort);
         Assert.Equal(2000, empty.MaxOutputTokens);
     }
 
     [Theory]
     [InlineData("extreme")]
     [InlineData("LOW")]
-    [InlineData("minimal")]
     public void S125_an_unknown_effort_is_a_configuration_error_naming_the_allowed_values(string effort)
     {
         var error = Assert.Throws<LlmConfigurationException>(() => LlmSettings.FromEnvironment(Env(("SENSEI_LLM_REASONING_EFFORT", effort))));
         Assert.Contains("SENSEI_LLM_REASONING_EFFORT", error.Message);
-        foreach (var allowed in new[] { "none", "low", "medium", "high" }) Assert.Contains(allowed, error.Message);
+        foreach (var allowed in new[] { "none", "minimal", "low", "medium", "high" }) Assert.Contains(allowed, error.Message);
     }
 
     [Theory]
@@ -125,13 +125,14 @@ public sealed class ReasoningEffortTests
         using var server = new FakeChatServer().EnqueueText("ok");
         var body = await OneRequestBody(new LlmSettings("openrouter", Key, null, server.BaseUrl), server);
 
-        Assert.Equal("low", body.GetProperty("reasoning").GetProperty("effort").GetString());
+        Assert.Equal("minimal", body.GetProperty("reasoning").GetProperty("effort").GetString());
         Assert.False(body.TryGetProperty("reasoning_effort", out _));
         Assert.Equal(2000, body.GetProperty("max_completion_tokens").GetInt32());
     }
 
     [Theory]
     [InlineData("none")]
+    [InlineData("low")]
     [InlineData("medium")]
     [InlineData("high")]
     public async Task S125_the_configured_effort_and_bound_are_sent(string effort)
@@ -161,7 +162,7 @@ public sealed class ReasoningEffortTests
         var body = await OneRequestBody(new LlmSettings("openrouter", Key, null, server.BaseUrl), server, new ChatOptions { MaxOutputTokens = 77 });
 
         Assert.Equal(77, body.GetProperty("max_completion_tokens").GetInt32());
-        Assert.Equal("low", body.GetProperty("reasoning").GetProperty("effort").GetString());
+        Assert.Equal("minimal", body.GetProperty("reasoning").GetProperty("effort").GetString());
     }
 
     [Fact]

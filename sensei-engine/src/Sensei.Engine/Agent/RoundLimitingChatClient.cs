@@ -6,6 +6,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Sensei.Engine.Events;
+using Sensei.Engine.Llm;
+using ChatMessageContentPart = OpenAI.Chat.ChatMessageContentPart;
+using ChatToolCall = OpenAI.Chat.ChatToolCall;
+using AssistantChatMessage = OpenAI.Chat.AssistantChatMessage;
 
 namespace Sensei.Engine.Agent;
 
@@ -24,9 +28,10 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
     private readonly HashSet<string> _offered;
     private readonly Action<TurnScope, string> _raiseState;
     private readonly bool _resultsAsText;
+    private readonly HashSet<string> _unavailable;
 
     public RoundLimitingChatClient(IChatClient inner, EngineCore core, ContextRenderer renderer, Func<TurnScope?> active,
-        IList<AITool> dynamicTools, IEnumerable<string> offeredToolNames, Action<TurnScope, string> raiseState, bool resultsAsText = false)
+        IList<AITool> dynamicTools, IEnumerable<string> offeredToolNames, Action<TurnScope, string> raiseState, bool resultsAsText = false, HashSet<string>? unavailable = null)
         : base(inner)
     {
         _core = core;
@@ -36,6 +41,7 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         _offered = new HashSet<string>(offeredToolNames, StringComparer.Ordinal);
         _raiseState = raiseState;
         _resultsAsText = resultsAsText;
+        _unavailable = unavailable ?? new HashSet<string>(StringComparer.Ordinal);
     }
 
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null,
@@ -100,8 +106,23 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         // history is not touched. What the allow-list took out is traced by type name.
         var notes = new List<string>();
         var list = OutboundMessages.Sanitized(messages, _core.Secrets, notes, _resultsAsText, _core.Pipeline.ReserveEngineCallId);
+        // Keep four finished learner turns plus the current turn at the provider boundary.
+        list = LearnerBoundaryReducer.Trim(list, scope.Request.EventKind is null ? 5 : 4);
+        var currentIndex = list.FindLastIndex(m => m.Role == ChatRole.User);
+        if (currentIndex > 0)
+        {
+            var previous = HistoryCompactor.Compact(list.Take(currentIndex).ToList());
+            previous.AddRange(list.Skip(currentIndex));
+            list = previous;
+        }
+        if (_resultsAsText) CompactFinishedCalls(list);
         _core.TraceOutboundContent(notes);
         var prepared = options?.Clone() ?? new ChatOptions();
+        bool taskActive;
+        lock (_core.Sync) taskActive = _core.Tasks.Active is not null;
+        _unavailable.Clear();
+        _unavailable.Add(taskActive ? "start_challenge" : "update_challenge");
+        if (prepared.Tools is not null) prepared.Tools = prepared.Tools.Where(t => !_unavailable.Contains(t.Name)).ToList();
         prepared.Instructions = _core.Secrets.Sanitize(_renderer.RenderInstructions(scope));
 
         var learnerMessage = new ChatMessage(ChatRole.User, _renderer.RenderLearnerMessage(scope));
@@ -109,6 +130,25 @@ internal sealed class RoundLimitingChatClient : DelegatingChatClient
         if (index >= 0) list[index] = learnerMessage;
         else list.Add(learnerMessage);
         return (list, prepared);
+    }
+
+    private static void CompactFinishedCalls(List<Microsoft.Extensions.AI.ChatMessage> messages)
+    {
+        var current = messages.FindLastIndex(m => m.Role == ChatRole.User);
+        for (var i = 0; i < current; i++)
+        {
+            var message = messages[i];
+            var calls = message.Contents.OfType<FunctionCallContent>().ToList();
+            if (message.Role != ChatRole.Assistant || calls.Count == 0 || message.Contents.Any(c => c is not (FunctionCallContent or TextContent))) continue;
+            var parts = message.Contents.OfType<TextContent>().Select(c => ChatMessageContentPart.CreateTextPart(c.Text)).ToList();
+            var rawCalls = calls.Select(c => ChatToolCall.CreateFunctionToolCall(c.CallId, c.Name,
+                BinaryData.FromBytes(SerializedRequestGuard.WriteJson(c.Arguments ?? new Dictionary<string, object?>(), OutboundGuard.MaxValues)))).ToList();
+            var raw = parts.Count == 0 ? new AssistantChatMessage(rawCalls) : new AssistantChatMessage(parts);
+            if (parts.Count > 0) foreach (var call in rawCalls) raw.ToolCalls.Add(call);
+            var copy = message.Clone();
+            copy.RawRepresentation = raw;
+            messages[i] = copy;
+        }
     }
 
     /// <summary>S85: every function call whose name is not an offered tool gets a pass-through function, so the loop routes it to the engine.</summary>

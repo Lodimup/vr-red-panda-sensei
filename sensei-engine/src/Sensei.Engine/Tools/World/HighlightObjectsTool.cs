@@ -23,7 +23,7 @@ public sealed class HighlightObjectsTool : SenseiTool<HighlightObjectsArgs>
 
     public override string Name => "highlight_objects";
 
-    public override string Description => "Make up to four objects glow for a moment so the learner notices them; highlighting a task answer counts as help.";
+    public override string Description => "Highlight objects; showing an answer counts as help.";
 
     protected override string SchemaJson => """
         {

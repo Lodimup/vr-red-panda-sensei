@@ -18,7 +18,7 @@ public sealed class ReplaySpeechTool : SenseiTool<ReplaySpeechArgs>
 {
     public override string Name => "replay_speech";
 
-    public override string Description => "Say an earlier utterance again (the latest by default), optionally slower; a replay counts as repetition help.";
+    public override string Description => "Replay speech; this counts as help.";
 
     protected override string SchemaJson => """
         {

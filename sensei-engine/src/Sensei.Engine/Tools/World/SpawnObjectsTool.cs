@@ -31,7 +31,7 @@ public sealed class SpawnObjectsTool : SenseiTool<SpawnObjectsArgs>
 
     public override string Name => "spawn_objects";
 
-    public override string Description => "Place catalog objects into the practice area or beside Sensei; new objects can be referenced from the next model round on.";
+    public override string Description => "Place catalog objects in the scene.";
 
     public override bool IsMutating => true;
 

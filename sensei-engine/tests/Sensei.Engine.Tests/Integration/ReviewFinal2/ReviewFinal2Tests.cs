@@ -163,7 +163,7 @@ public sealed class ReviewFinal2Tests
     }
 
     [Theory]
-    [InlineData(null, "low")]
+    [InlineData(null, "minimal")]
     [InlineData("high", "high")]
     public async Task F04_every_request_must_carry_the_S125_reasoning_effort(string? configured, string expected)
     {

@@ -22,8 +22,8 @@ public sealed class AgentLoopTests
         await t.Engine.RunTurnAsync("hello");
 
         var tools = chat.Requests[0].Options!.Tools!;
-        Assert.Equal(t.Engine.ToolNames, tools.Select(x => x.Name).ToArray());
-        Assert.Equal(16, tools.Count);
+        Assert.Equal(t.Engine.ToolNames.Where(n => n != "update_challenge"), tools.Select(x => x.Name).ToArray());
+        Assert.Equal(15, tools.Count);
         foreach (var tool in tools)
         {
             var function = Assert.IsAssignableFrom<SenseiTool>(tool);

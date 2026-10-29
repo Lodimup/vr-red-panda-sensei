@@ -23,7 +23,7 @@ public sealed class RemoveObjectsTool : SenseiTool<RemoveObjectsArgs>
 
     public override string Name => "remove_objects";
 
-    public override string Description => "Take objects out of the scene; a container can only go together with everything inside it.";
+    public override string Description => "Remove scene objects; include container contents.";
 
     public override bool IsMutating => true;
 
