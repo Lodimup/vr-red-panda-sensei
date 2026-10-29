@@ -2,7 +2,7 @@
 
 ## v0.1.2
 
-- Reduced median input size from about 9.1k to 6.1k tokens and set reasoning effort to minimal; the provider does not accept none. Time to first speech was roughly halved in live evaluation.
+- Reduced median input size from about 9.1k to 6.1k tokens and set reasoning effort to minimal; the provider does not accept none. Time to first speech fell by about 40% in live evaluation (median 9.0 s to 5.4 s).
 - Beginners receive a first task in the first response.
 - Practice with a mixed-reality companion, local speech recognition and synthesis, interactive objects, captions, hints and saved progress.
 
@@ -10,7 +10,7 @@
 
 - The voice test corpus uses synthetic speech; it does not establish performance across real speakers and environments.
 - Mixed Japanese-English speech recognition is weak.
-- Device turn timings for this release are pending acceptance measurements.
+- In the device acceptance runs, six recorded push-to-talk turns ended after 8.1–33.4 seconds (median 19.9 seconds), including an interrupted turn; latency varies by turn and network.
 - There is no in-VR API key entry; provision the key from a computer.
 
 ## v0.1.1
