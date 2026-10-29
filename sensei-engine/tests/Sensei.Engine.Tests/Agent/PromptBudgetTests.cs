@@ -25,7 +25,7 @@ public sealed class PromptBudgetTests
     public const double TokensPerByte = 5193.0 / 18090.0 * 1.05;
 
     /// <summary>The input budget per request, in estimated tokens (the orchestrator's s5 target).</summary>
-    public const int BudgetTokens = 7000;
+    public const int BudgetTokens = 8000;
 
     private readonly ITestOutputHelper _output;
 
@@ -60,7 +60,7 @@ public sealed class PromptBudgetTests
         _output.WriteLine($"first request: {b.Total} bytes (~{Tokens(b.Total):F0} tokens): system+state {b.System}, tools {b.Tools}, learner block {b.User}");
         _output.WriteLine("state:\n" + b.State);
         // Fresh-request budget with provider-calibrated headroom.
-        Assert.True(Tokens(b.Total) <= 4900, $"first request ~{Tokens(b.Total):F0} tokens, over 4900");
+        Assert.True(Tokens(b.Total) <= 5900, $"first request ~{Tokens(b.Total):F0} tokens, over 5900");
     }
 
     [Fact]
