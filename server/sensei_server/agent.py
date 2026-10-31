@@ -4,7 +4,9 @@ from __future__ import annotations
 import json
 import os
 import re
+from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent, UsageLimits
 from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -20,6 +22,18 @@ EVENTS = {
     "help_english": "The learner asked for an English explanation of what is happening right now.",
     "area_placed": "The learner moved the practice area. The scene did not change. Do not respond unless something needs saying.",
 }
+
+
+class SpeechSegment(BaseModel):
+    """One language-specific segment of Sensei's speech."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lang: Literal["ja", "en"] = Field(description="Language of this segment")
+    text: str = Field(description="Spoken text in that language")
+    reading: str | None = None
+    romaji: str | None = None
+    translation: str | None = None
 
 
 def error_code(exc: Exception) -> str:
@@ -60,11 +74,12 @@ async def run_agent(session, generation: int, text: str, event: bool):
     spoken = 0
 
     @agent.tool_plain
-    async def speak(segments: list[dict[str, str]]) -> dict:
-        """Present Japanese and English speech segments as captions."""
+    async def speak(segments: list[SpeechSegment]) -> dict:
+        """Present speech as separate {lang, text} segments for Japanese and English."""
         nonlocal spoken
         if not 1 <= len(segments) <= 6:
             return {"status": "failed", "error_code": "invalid_arguments"}
+        segments = [segment.model_dump(exclude_none=True) for segment in segments]
         for segment in segments:
             if not isinstance(segment, dict) or segment.get("lang") not in ("ja", "en") or not isinstance(segment.get("text"), str) or not 1 <= len(segment["text"]) <= (60 if segment["lang"] == "ja" else 160):
                 return {"status": "failed", "error_code": "invalid_arguments"}

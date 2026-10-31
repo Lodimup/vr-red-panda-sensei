@@ -155,6 +155,50 @@ def test_real_agent_tools_against_model_protocol(tmp_path, monkeypatch):
     assert session.profile["support"]["pace"] == "slow"
 
 
+def test_speech_tool_schema_and_recovery_from_wrong_segment_shape(tmp_path, monkeypatch):
+    import asyncio
+    from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+    from pydantic_ai.models.function import FunctionModel
+    import sensei_server.agent as adapter
+    from sensei_server.app import Session
+
+    requests = []
+
+    def model(messages, info):
+        requests.append(messages)
+        schema = next(tool.parameters_json_schema for tool in info.function_tools if tool.name == "speak")
+        segment = schema["$defs"]["SpeechSegment"]
+        assert set(segment["required"]) == {"lang", "text"}
+        assert segment["properties"]["lang"]["enum"] == ["ja", "en"]
+        if len(requests) == 1:
+            return ModelResponse(parts=[ToolCallPart("speak", {"segments": [{"ja": "こんにちは"}]})])
+        if len(requests) == 2:
+            return ModelResponse(parts=[ToolCallPart("speak", {"segments": [
+                {"lang": "ja", "text": "こんにちは"}, {"lang": "en", "text": "Hello!"},
+            ]})])
+        return ModelResponse(parts=[TextPart("")])
+
+    class Socket:
+        def __init__(self):
+            self.messages = []
+
+        async def send_json(self, msg):
+            self.messages.append(msg)
+
+    monkeypatch.setenv("SENSEI_PROFILE_DIR", str(tmp_path))
+    monkeypatch.setenv("SENSEI_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(adapter, "OpenAIChatModel", lambda *args, **kwargs: FunctionModel(model))
+    socket = Socket()
+    session = Session(socket, "speechschema")
+    session.generation = session.turn_id = 1
+    asyncio.run(adapter.run_agent(session, 1, "session_start", True))
+
+    lines = [message for message in socket.messages if message["type"] == "line"]
+    assert len(requests) == 3
+    assert len(lines) == 1
+    assert [segment["lang"] for segment in lines[0]["segments"]] == ["ja", "en"]
+
+
 def test_mode_guards():
     import subprocess
     import sys
