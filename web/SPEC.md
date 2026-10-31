@@ -11,10 +11,13 @@ Handler rulings recorded in the source specs keep their force here.
 
 - Server: `server/` — Python 3.12, FastAPI, one process. It serves the
   static client, owns one engine instance per WebSocket session, runs
-  ASR and TTS in-process, and stores learner profiles on disk.
+  ASR in-process, and stores learner profiles on disk.
   RULING(Handler 2026-10-30): the backend is Python — FastAPI +
-  PydanticAI — so the local Kitten TTS lives in the same server; the
-  C# engine is not referenced, its behaviour and prompts are ported.
+  PydanticAI; the C# engine is not referenced, its behaviour and
+  prompts are ported.
+  RULING(Handler 2026-10-31): the TTS feature is cut. Sensei has no
+  voice; his lines are delivered as `line` caption events
+  (PROTOCOL §5) and rendered as captions above him (W14).
 - Client: `client/` — Vite + TypeScript + three.js, WebXR
   `immersive-ar` on Quest Browser, and a full desktop mode (mouse +
   keyboard) with identical behaviour. Text rendering: troika-three-text
@@ -33,13 +36,13 @@ Handler rulings recorded in the source specs keep their force here.
   persisted learner id; (2) on `welcome`, build the practice area (§2);
   (3) enter desktop mode immediately, and offer "Enter AR" when an
   immersive-ar session is available; (4) send player event
-  `session_start` (mirrors U1/U40). Audio output unlocks on the first
-  user gesture (browser policy); the greeting turn waits for that
-  gesture if none has happened yet.
+  `session_start` (mirrors U1/U40). The greeting turn runs on boot;
+  microphone permission is requested on the first talk press, not at
+  boot.
 - **W2** `welcome.llm == "no_key"`: the app still boots, scene and
   panels work, the status panel shows the no-key line and talk is
-  disabled with that message. ASR/TTS failures at load show which
-  component failed; boot never dead-ends silently (mirrors U2).
+  disabled with that message. An ASR failure at load shows on the
+  status panel; boot never dead-ends silently (mirrors U2).
 - **W3** Reconnect: a dropped socket is retried with backoff; a
   successful reconnect re-runs W1 against the same learner id (profile
   restored server-side; scene restarts empty, engine S59/S8).
@@ -79,10 +82,10 @@ positions are local to the anchor (x right, y up, z away from player).
   `assets/sprites/sensei/` with the ghost-fade treatment of the Unity
   build (mirrors U11/U12).
 - **W12** Pose priority: learner holding talk → `listen`; server state
-  `thinking` → `think`; `speaking` → `speak` with the cardboard-puppet
-  bounce driven by output level; a recent `animate` message → that
-  pose (`point` mirrored when the target is to Sensei's right); else
-  `idle_float` (mirrors U13).
+  `thinking` → `think`; `presenting` → `speak` with a gentle
+  cardboard-puppet bounce while the line is up; a recent `animate`
+  message → that pose (`point` mirrored when the target is to Sensei's
+  right); else `idle_float` (mirrors U13).
 - **W13** Highlight: a `highlight` message draws a pulsing warm-yellow
   glow behind each named card for the given duration (mirrors U14).
   The selected card keeps a thin white outline until selection changes
@@ -91,11 +94,13 @@ positions are local to the anchor (x right, y up, z away from player).
 
 ## 4 Panels
 
-- **W14** Caption panel under Sensei (0.6 m wide, faces the head): the
-  current utterance's sentence as it plays — Japanese line large, then
-  reading, romaji and translation lines, each shown only when the
-  chunk's `captions` flags allow it (PROTOCOL §4). English sentences
-  render as plain text. Cleared 4 s after speech ends (mirrors U17).
+- **W14** Caption panel ABOVE Sensei (RULING(Handler 2026-10-31);
+  0.6 m wide, faces the head): the current `line` event's segments —
+  Japanese line large, then reading, romaji and translation lines,
+  each shown only when the event's `captions` flags allow it
+  (PROTOCOL §5). English segments render as plain text. A new `line`
+  replaces the presented one; the panel clears 4 s after the turn
+  ends if no newer line arrived (mirrors U17, position amended).
 - **W15** Task card above the mat centre: the active task's
   instruction (Japanese large, English small per support settings) and
   a status chip (`active` / `completed ✓` / `abandoned`). Hidden when
@@ -134,13 +139,13 @@ the acceptance suite (PROTOCOL §6).
   move (`action_result.ok == false`) snaps the card back; in XR it also
   fires a short controller buzz where the platform supports it
   (mirrors U22).
-- **W22** Talk press while Sensei is speaking or thinking interrupts:
-  the client stops playback immediately and sends `talk_start`; the
-  server cancels the generation. Playback must reach silence within
-  300 ms of the press (mirrors U23). Holds under 300 ms never reach
-  the engine (PROTOCOL §3).
+- **W22** Talk press while Sensei is presenting or thinking
+  interrupts: the client sends `talk_start`; the server cancels the
+  generation, and no event from the stale generation is rendered
+  (mirrors U23). Holds under 300 ms never reach the engine
+  (PROTOCOL §3).
 
-## 6 Turns and the speech pipeline (server)
+## 6 Turns and line delivery (server)
 
 - **W23** A turn runs: ASR transcript → `transcript` message → agent
   turn (PydanticAI port of the engine loop: same system prompt content,
@@ -153,24 +158,23 @@ the acceptance suite (PROTOCOL §6).
   ships with the server, not the browser). Input is the uploaded
   16 kHz mono PCM (PROTOCOL §4). ASR failure → `notice couldnt_hear`,
   no turn.
-- **W25** TTS: the local Kitten TTS model, in the server process (no
-  hosted TTS API). Japanese text is passed with normalization off
-  (the model's normalizer is English-tuned); output is 24 kHz PCM.
-  One configured voice for Sensei. Synthesis results are cached by
-  (text, voice, pace); the cache is what makes repeat and replay
-  instant.
-- **W26** Per-sentence streaming: a `speak` tool result's segments are
-  split into sentences; sentence k+1 is synthesized while sentence k
-  plays; chunks go out in order under the utterance's generation
-  (PROTOCOL §4). The client plays chunks gaplessly in arrival order
-  and shows the caption of the sentence currently playing.
-- **W27** Interrupt: a new generation (talk press, `cancel`, a new
-  turn) invalidates in-flight synthesis and playback; the server sends
-  `speech_stop` and drops unsent chunks for the stale generation;
-  already-cached audio stays cached (mirrors engine S27).
-- **W28** Replay: `repeat` and the `replay_speech` tool both serve the
-  stored utterance's audio from cache where possible (engine S39/S142
-  semantics, including `nothing_to_replay`).
+- **W25** Line delivery: a `speak` tool result's segments go out as
+  one `line` event per utterance, in causal order, under the turn's
+  generation (PROTOCOL §5). The client presents the latest line on
+  the caption panel (W14). There is no synthesis, no audio and no
+  playback anywhere in the system (TTS cut, §0).
+- **W26** Segment order and content are the engine's (S135–S142
+  semantics carried as text): the segments of one utterance stay
+  together in one `line` event; separate utterances in one turn are
+  separate `line` events in the order the tool produced them.
+- **W27** Interrupt: a new generation (talk press, `cancel` , a new
+  turn) invalidates the in-flight turn; the server sends nothing
+  further for the stale generation, and the client drops any stale
+  `line` by generation id (mirrors engine S27).
+- **W28** Replay: `repeat` and the `replay_speech` tool both
+  re-present the stored utterance as a fresh `line` event (engine
+  S39/S142 semantics, including `nothing_to_replay` →
+  `nothing_to_repeat`).
 
 ## 7 Failure display
 
@@ -184,8 +188,8 @@ the acceptance suite (PROTOCOL §6).
 ## 8 Menu and profile
 
 - **W30** Menu panel (left-hand side in XR, overlay panel on desktop):
-  LLM status (from the last turn result / `welcome`), voice status,
-  recognizer status; starting-band buttons (`zero` … `advanced`,
+  LLM status (from the last turn result / `welcome`), recognizer
+  status; starting-band buttons (`zero` … `advanced`,
   plain-English labels) → `set_band`; English-help toggle →
   `player_event help_english`; session summary → `session_summary`
   (practiced items with independent/supported counts, never a level);
@@ -225,12 +229,13 @@ the acceptance suite (PROTOCOL §6).
 - **W35** Nothing is "ready" until the hidden acceptance suite passes
   against the integrated build on the desktop path (headed Chromium,
   emulated XR with hands and controllers, fake microphone fed from
-  WAV files, an audio tap asserting non-silent output for every Sensei
-  line), followed by the Quest Browser headset smoke: open the URL,
-  enter AR, complete one greeting turn with audio, verified in the
-  server log. Scenarios: A01 first session, A10 interrupt/repeat, A11
-  returning learner, H1 hands-only, C1 controllers-only, D1 desktop —
-  per PROTOCOL §6.
+  WAV files, assertions that every Sensei line arrives as a `line`
+  event and renders on the caption panel), followed by the Quest
+  Browser headset smoke: open the URL, enter AR, complete one
+  greeting turn with its line presented, verified in the server log.
+  Scenarios: A01 first session, A10 interrupt/repeat, A11 returning
+  learner, H1 hands-only, C1 controllers-only, D1 desktop — per
+  PROTOCOL §6.
 - **W36** Builders run targeted tests plus build/typecheck per slice;
   the full suite and the E2E pass run once, on the integrated result,
   coordinated by the orchestrator.
