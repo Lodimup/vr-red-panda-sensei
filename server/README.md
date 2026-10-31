@@ -6,6 +6,12 @@ Requires Python 3.12 or newer. Install dependencies with `uv sync`, then run
 can point to a built client directory. The server caches the SenseVoice model
 outside the repository and downloads it on first use.
 
+Set `SENSEI_VOICE_REF` to the path of a reference WAV for Qwen3-TTS. The
+server loads and warms the voice before accepting connections; model weights
+are cached by Hugging Face outside the repository. Set `SENSEI_TTS=off` to
+skip voice initialization. If initialization fails, captions remain available
+and `welcome.voice` reports `unavailable`.
+
 Set `SENSEI_LLM_API_KEY` in the process environment for the real model.
 `SENSEI_LLM_MODEL`, `SENSEI_LLM_BASE_URL`, `SENSEI_LLM_REASONING_EFFORT`,
 and `SENSEI_LLM_MAX_OUTPUT_TOKENS` override the defaults.

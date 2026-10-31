@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager, suppress
 import json
+import logging
 import os
 from pathlib import Path
 import uuid
@@ -15,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from .profile import BANDS, DEFAULT_SUPPORT, PROFILE_ID, ProfileCorrupt, ProfileStore, new_profile, now
 from .scene import Scene, SceneError
 from .sanitize import clean
+from .tts import FakeSynthesizer, QwenSynthesizer, sentences
 
 FAKE = os.getenv("SENSEI_FAKE_LLM") == "1" and os.getenv("SENSEI_FAKE_ASR") == "1"
 if FAKE and os.getenv("SENSEI_LLM_API_KEY"):
@@ -30,6 +32,17 @@ BAND_DEFAULTS = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.tts = None
+    if os.getenv("SENSEI_TTS", "").lower() == "off":
+        pass
+    elif FAKE:
+        app.state.tts = FakeSynthesizer()
+    else:
+        try:
+            app.state.tts = await asyncio.to_thread(QwenSynthesizer, os.environ["SENSEI_VOICE_REF"])
+        except Exception as exc:
+            # Do not log paths, audio, or exception text.
+            logging.getLogger(__name__).warning("TTS initialization failed (%s)", type(exc).__name__)
     app.state.asr = None
     app.state.asr_status = "ready" if FAKE else "loading"
     app.state.next_transcript = "hello"
@@ -80,6 +93,7 @@ class Session:
         self.generation = 0
         self.task = None
         self.last_line = None
+        self.utterance_id = 0
         self.running = None
         self.send_lock = asyncio.Lock()
         self.audio = None
@@ -129,15 +143,49 @@ class Session:
             return
         captions = {k: self.profile["support"][k] for k in ("show_japanese", "show_reading", "show_romaji", "show_translation")}
         self.last_line = segments
-        await self.send("sensei_state", state="presenting")
+        self.utterance_id += 1
+        utterance = f"u{self.utterance_id}"
+        await self.send("sensei_state", state="speaking")
         await self.send("line", generation_id=generation, segments=segments, captions=captions)
+        tts = getattr(app.state, "tts", None)
+        if tts is None:
+            return
+        chunks = sentences(segments)
+        for chunk_index, (segment_index, text, segment) in enumerate(chunks):
+            try:
+                pcm = await asyncio.to_thread(tts.synthesize, text, segment["lang"])
+            except Exception:
+                # A synthesis failure leaves the caption usable.
+                return
+            async def send_chunk():
+                async with self.send_lock:
+                    if generation != self.generation:
+                        return
+                    header = {"type": "speak_chunk", "v": 1, "utterance_id": utterance,
+                              "generation_id": generation, "segment_index": segment_index,
+                              "chunk_index": chunk_index, "lang": segment["lang"], "text": text,
+                              "reading": segment.get("reading"), "romaji": segment.get("romaji"),
+                              "translation": segment.get("translation"), "format": "pcm_s16le",
+                              "sample_rate": 24000, "channels": 1, "final": chunk_index == len(chunks) - 1}
+                    await self.ws.send_json(header)
+                    await self.ws.send_bytes(pcm)
+            # Header and binary are one protocol transfer, even if interrupted.
+            transfer = asyncio.create_task(send_chunk())
+            try:
+                await asyncio.shield(transfer)
+            except asyncio.CancelledError:
+                await transfer
+                raise
 
     async def cancel(self):
-        if self.running and not self.running.done():
-            self.running.cancel()
+        running, self.running = self.running, None
+        if running and not running.done():
+            running.cancel()
+        if self.generation:
+            await self.send("speech_stop", generation_id=self.generation)
+        if running:
             with suppress(asyncio.CancelledError):
-                await self.running
-        self.running = None
+                await running
 
     async def start(self, text: str, event=False):
         await self.cancel()
@@ -156,7 +204,7 @@ class Session:
                 if event and text == "help_hint":
                     await self.send("hint", card={"kind": "partial_phrase", "content": {"english": "Try asking for an object."}})
                 elif event and text == "session_start":
-                    await self.line(generation, [{"lang": "ja", "text": "こんにちは！"}, {"lang": "en", "text": "Hello! What Japanese do you know?"}])
+                    await self.line(generation, [{"lang": "ja", "text": "こんにちは！"}, {"lang": "en", "text": "Hello, what Japanese do you know?"}])
                 elif text.startswith("fail "):
                     status, code = "failed", text[5:]
                 elif text == "spawn apple":
@@ -194,7 +242,7 @@ class Session:
         if self.last_line is None:
             await self.send("notice", code="nothing_to_repeat")
         else:
-            await self.line(self.generation, self.last_line)
+            self.running = asyncio.create_task(self.line(self.generation, self.last_line))
 
     def save(self):
         self.profile["updated_at"] = now()
@@ -372,7 +420,7 @@ async def websocket(ws: WebSocket):
                     await ws.close()
                     break
                 app.state.sessions.add(session)
-                await session.send("welcome", session_id=session.session_id, scene=session.scene.snapshot(session.profile["support"], None), support=session.profile["support"], task=None, llm="ready" if FAKE or os.getenv("SENSEI_LLM_API_KEY") else "no_key", asr=app.state.asr_status)
+                await session.send("welcome", session_id=session.session_id, scene=session.scene.snapshot(session.profile["support"], None), support=session.profile["support"], task=None, llm="ready" if FAKE or os.getenv("SENSEI_LLM_API_KEY") else "no_key", asr=app.state.asr_status, voice="ready" if app.state.tts is not None else "unavailable")
             else:
                 await session.message(msg)
     except WebSocketDisconnect:

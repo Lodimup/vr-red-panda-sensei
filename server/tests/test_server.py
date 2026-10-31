@@ -10,7 +10,11 @@ from sensei_server.app import app
 def receive_until(ws, kind):
     seen = []
     while True:
-        item = ws.receive_json()
+        frame = ws.receive()
+        if frame.get("bytes") is not None:
+            continue
+        import json
+        item = json.loads(frame["text"])
         seen.append(item)
         if item["type"] == kind:
             return seen
@@ -139,6 +143,8 @@ def test_real_agent_tools_against_model_protocol(tmp_path, monkeypatch):
             self.messages = []
         async def send_json(self, msg):
             self.messages.append(msg)
+        async def send_bytes(self, data):
+            pass
 
     monkeypatch.setenv("SENSEI_PROFILE_DIR", str(tmp_path))
     monkeypatch.setenv("SENSEI_LLM_API_KEY", "test-key")
@@ -184,6 +190,8 @@ def test_speech_tool_schema_and_recovery_from_wrong_segment_shape(tmp_path, monk
 
         async def send_json(self, msg):
             self.messages.append(msg)
+        async def send_bytes(self, data):
+            pass
 
     monkeypatch.setenv("SENSEI_PROFILE_DIR", str(tmp_path))
     monkeypatch.setenv("SENSEI_LLM_API_KEY", "test-key")
