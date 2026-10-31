@@ -5,10 +5,11 @@ export interface Task {task_id: string; status: string; family: string; skill_ta
 export interface Snapshot {revision: number; selected_id: string|null; instances: Instance[]; active_task: Task|null; support: Support}
 export interface Segment {lang: 'ja'|'en'; text: string; reading?: string; romaji?: string; translation?: string}
 export interface Line {type: 'line'; generation_id: number; segments: Segment[]; captions: Pick<Support,'show_japanese'|'show_reading'|'show_romaji'|'show_translation'>}
+export interface Chunk extends Segment {type: 'speak_chunk'; utterance_id: string; generation_id: number; segment_index: number; chunk_index: number; format: 'pcm_s16le'; sample_rate: number; channels: number; final: boolean}
 export interface Hint {kind: string; content: {japanese?: string; reading?: string; romaji?: string; english?: string}}
-export interface State {snapshot: Snapshot|null; support: Support|null; task: Task|null; hint: Hint|null; caption: Line|null; captionError: string; said: string; connection: string; llm: string; recognizer: string; sensei: 'idle'|'thinking'|'presenting'; pose: string|null; poseTarget: string|null; talking: boolean; menu: boolean; summary: {practiced?: {label: string; independent: number; supported: number}[]; next_suggestion?: string|null}|null; highlights: Record<string, number>}
+export interface State {snapshot: Snapshot|null; support: Support|null; task: Task|null; hint: Hint|null; caption: Line|null; captionError: string; said: string; connection: string; llm: string; voice: string; recognizer: string; sensei: 'idle'|'thinking'|'speaking'; pose: string|null; poseTarget: string|null; talking: boolean; menu: boolean; summary: {practiced?: {label: string; independent: number; supported: number}[]; next_suggestion?: string|null}|null; highlights: Record<string, number>}
 export class Store {
-  state: State = {snapshot:null,support:null,task:null,hint:null,caption:null,captionError:'',said:'',connection:'Connecting…',llm:'Connecting…',recognizer:'Waiting for server',sensei:'idle',pose:null,poseTarget:null,talking:false,menu:false,summary:null,highlights:{}};
+  state: State = {snapshot:null,support:null,task:null,hint:null,caption:null,captionError:'',said:'',connection:'Connecting…',llm:'Connecting…',voice:'Waiting for server',recognizer:'Waiting for server',sensei:'idle',pose:null,poseTarget:null,talking:false,menu:false,summary:null,highlights:{}};
   private listeners = new Set<(state: State)=>void>();
   update(patch: Partial<State>) {this.state = {...this.state,...patch}; this.listeners.forEach(fn=>fn(this.state));}
   subscribe(fn: (state: State)=>void) {this.listeners.add(fn); fn(this.state); return ()=>this.listeners.delete(fn);}
