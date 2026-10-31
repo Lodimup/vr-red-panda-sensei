@@ -75,6 +75,37 @@ def test_cancel_drops_inflight_synthesis(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
+def test_repeat_preserves_speech_and_task_assistance(tmp_path, monkeypatch):
+    monkeypatch.setenv('SENSEI_PROFILE_DIR', str(tmp_path))
+    monkeypatch.setattr(app.state, 'tts', Stub(), raising=False)
+
+    async def run():
+        socket = Socket()
+        session = Session(socket, 'repeat')
+        session.profile['support']['show_japanese'] = False
+        session.profile['support']['show_translation'] = False
+        session.scene.spawn([{'catalog_id': 'apple'}], 0)
+        target = {'dimension': 'listening', 'key': 'apple'}
+        task = session.tasks.start('listen_arrange', {'english': 'Move the apple.'}, [target],
+                                   [{'type': 'in_region', 'object_id': 'apple_1', 'region': 'right'}],
+                                   [], None, False, session.profile['support'], 0)
+        session.evidence.started(task)
+        session.generation = 1
+        session.last_line = [{'lang': 'en', 'text': 'Move the apple.'}]
+        await session.repeat()
+        assert session.running is not None
+        await session.running
+        assert any(isinstance(frame, dict) and frame['type'] == 'speak_chunk' for frame in socket.frames)
+        session.turn_id = 1
+        event = session.scene.move('apple_1', 'right', None, 'player', 1)
+        await session.evaluate_task(event)
+        evidence = session.evidence.record(target, None, True, 'correct', [event['event_id']])
+        assert evidence['outcome'] == 'success_after_repetition'
+        assert evidence['assistance'] == ['repetition']
+
+    asyncio.run(run())
+
+
 def test_fake_waveform():
     pcm = FakeSynthesizer().synthesize('test', 'en')
     samples = np.frombuffer(pcm, dtype='<i2').astype(float) / 32767
