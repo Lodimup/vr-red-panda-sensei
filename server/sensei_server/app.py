@@ -351,7 +351,7 @@ class Session:
                     if not text.strip():
                         await self.send("notice", code="didnt_catch")
                     else:
-                        await self.send("transcript", text=clean(text), final=True)
+                        await self.send("transcript", text=clean(text), lang="und", final=True)
                         await self.start(text)
                 except Exception:
                     await self.send("notice", code="couldnt_hear")

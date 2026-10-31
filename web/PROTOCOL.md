@@ -158,9 +158,9 @@ one or more binary frames, concatenated in order.
 ## 5 Server → client messages
 
 - `welcome` (§1).
-- `transcript` `{ "text": "<asr result>", "final": true }` — what the
+- `transcript` `{ "text": "<asr result>", "lang": "und", "final": true }` — what the
   learner is about to be understood as saying; the client shows it on
-  the "You said" line. Sent before the turn runs. An ASR failure sends
+  the "You said" line. `lang` is `und` (undetermined) when the recognizer does not supply a language. Sent before the turn runs. An ASR failure sends
   `notice` (`couldnt_hear`) instead and no turn runs (unity U31).
 - `turn_started` `{ "turn_id": <n>, "generation_id": <n> }`.
 - `turn_ended` `{ "result": <TurnResult> }` — includes `failed` results

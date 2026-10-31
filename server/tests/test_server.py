@@ -49,7 +49,9 @@ def test_protocol_roundtrip(tmp_path, monkeypatch):
             receive_until(ws, "sensei_state")
             talk(client, ws, "spawn apple")
             spawn = receive_until(ws, "turn_ended")
-            assert next(m for m in spawn if m["type"] == "transcript")["text"] == "spawn apple"
+            transcript = next(m for m in spawn if m["type"] == "transcript")
+            assert transcript == {"type": "transcript", "v": 1, "text": "spawn apple", "lang": "und", "final": True}
+            assert spawn.index(transcript) < next(i for i, m in enumerate(spawn) if m["type"] == "turn_started")
             assert next(m for m in spawn if m["type"] == "scene")["snapshot"]["instances"][0]["id"] == "apple_1"
             receive_until(ws, "sensei_state")
             send(ws, "player_move", instance_id="apple_1", region="left", container_id="apple_1")

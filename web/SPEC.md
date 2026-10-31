@@ -112,28 +112,20 @@ positions are local to the anchor (x right, y up, z away from player).
 - **W16** Hint card next to the task card from a `hint` message: kind
   label plus the fields present. Stays until the next turn ends or the
   task changes (mirrors U19).
-- **W17** "You said" line under the caption panel: `Listening…` while
-  talk is held, `…` while transcribing, then `You: <transcript>` from
+- **W17** "You said" line beside the caption panel: `Listening…` while
+  talk is held, with a live microphone level indicator in-world and in the overlay; `Heard you — transcribing…` on release, then `You: <transcript>` from
   the server's `transcript` message; `notice` codes render their
-  matching short line here (mirrors U20/U23).
+  matching short line here. The transcript stays until Sensei’s reply appears. `didnt_catch` displays “I didn’t catch that — hold A and speak again”. (mirrors U20/U23).
 
 ## 5 Input
 
 Three input paths with identical semantics; every path is exercised by
 the acceptance suite (PROTOCOL §6).
 
-- **W18 Hands (WebXR hand tracking).** Pinch-and-hold on the talk
-  button = push-to-talk (press and release mirror W23). Index pinch
-  begun on a card grabs it; the card follows the pinch point; releasing
-  the pinch over a region drops it there (`player_move` with region),
-  over a container card into that container, anywhere else snaps back.
-  A pinch tap (short pinch, no grab movement) on a card selects it.
-- **W19 Controllers.** Trigger on a card = select; grip on a card =
-  grab with the same drop rules as W18; A (right) held = push-to-talk;
-  B = repeat (`repeat` message); X = hint (`player_event help_hint`);
-  Y short press = menu toggle, Y long press (1 s) = re-place area;
-  left thumbstick click = slower pace toggle (preference pace
-  slow/normal) (mirrors U21–U25).
+- **W18 Hands (WebXR hand tracking).** Pinch-and-hold with either hand =
+  push-to-talk; releasing the pinch ends talk and does not select a card.
+- **W19 Controllers.** Trigger (button 0) on a card = select; grip (button 1) on a card =
+  grab; release over a mat region or container to move it, otherwise snap back; A (right, button 4) held = push-to-talk; B (right, button 5) = repeat (`repeat` message); X (left, button 4) = hint (`player_event help_hint`); Y (left, button 5) = menu toggle. Controllers use grip-space geometry and target-ray pointers; hand sources do not render controllers.
 - **W20 Desktop.** Space held = push-to-talk (microphone via
   getUserMedia; the test harness substitutes a WAV file). Click a card
   = select; click-drag a card = grab and drop with the same rules;
@@ -151,7 +143,7 @@ the acceptance suite (PROTOCOL §6).
 
 ## 6 Turns and the speech pipeline (server)
 
-- **W23** A turn runs: ASR transcript → `transcript` message → agent
+- **W23** A turn runs: ASR transcript → `transcript` message (text and language, `und` if unavailable) → agent
   turn (PydanticAI port of the engine loop: same system prompt content,
   same 16 tools, same budgets — 8 tool calls and 4 model rounds per
   turn, same error-code mapping — engine S61–S68, S143) → tool effects
