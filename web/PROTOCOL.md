@@ -1,9 +1,11 @@
 # Red Panda Sensei: web protocol (web/PROTOCOL.md)
 
-Status: wave-1 contract, 2026-10-31. Amended the same day:
-RULING(Handler 2026-10-31) — the TTS feature is cut. Sensei has no
-voice; his lines travel as `line` caption events (§5) and render as
-captions. Audio exists only as learner microphone upload (§4).
+Status: wave-1 contract, 2026-10-31. Amendment history, same day:
+TTS was cut by ruling, then restored by RULING(Handler 2026-10-31)
+with Qwen3-TTS as the engine: Sensei's lines travel as `line` caption
+events (§5) AND as streamed `speak_chunk` audio (§4); the TTS model
+is loaded and warmed at server start (SPEC W25), so the first line
+never pays the cold cost. Captions stay above Sensei (W14).
 This file is the wire contract between
 `sensei-server` (Python, FastAPI) and the WebXR client. The behaviour the
 protocol carries is specified in `web/SPEC.md`; the game-master semantics
@@ -17,15 +19,15 @@ spec wins; where they disagree about the wire, this file wins.
 - One WebSocket per session: `GET /ws`. The server also serves the static
   client at `/` and a health endpoint at `/healthz`.
 - Text frames are JSON messages (one object per frame). Audio travels
-  as binary frames in the upload direction only, each immediately
-  preceded by a JSON header frame that describes it (see §4). No other
-  binary framing exists.
+  as binary frames, each immediately preceded by a JSON header frame
+  that describes it (see §4): microphone PCM uploads, and TTS PCM
+  downloads. No other binary framing exists.
 - Every JSON message has `type` (string) and `v: 1`. Unknown message types
   are ignored by both sides; a message whose `v` is not understood is a
   fatal protocol error (`error` with code `protocol_version`, then close).
 - Message size limits: JSON frames ≤ 64 KiB; one audio upload ≤ 8 MiB
-  total. Violations close the socket with code 1009 after an `error`
-  frame when the connection state allows one.
+  total; one TTS chunk ≤ 2 MiB. Violations close the socket with code
+  1009 after an `error` frame when the connection state allows one.
 - Ordering: server messages for one session are sent in causal order.
   Client messages are processed in arrival order; player actions never
   wait behind a running turn.
@@ -43,7 +45,10 @@ spec wins; where they disagree about the wire, this file wins.
 2. Server replies `welcome`:
    `{ "type": "welcome", "session_id": "s-...", "scene": <SceneSnapshot>,
       "support": <SupportSettings>, "task": <TaskView|null>,
-      "llm": "ready" | "no_key" }`
+      "llm": "ready" | "no_key", "voice": "ready" | "unavailable" }`
+   `voice` reports the TTS engine state; the server warms the model
+   before it accepts connections (SPEC W25), so a served client
+   normally sees `"ready"`.
    `llm: "no_key"` mirrors engine behaviour without a key: the scene works,
    talk turns fail with `llm_not_configured`, and the client shows the
    no-key status (web SPEC W2).
@@ -103,11 +108,12 @@ Field names are snake_case, exactly as in the engine spec.
 - `player_event` `{ "kind": "<kind>" }` — kind ∈ `session_start`,
   `help_hint`, `help_repeat`, `help_english`, `area_placed` (engine
   S135). Runs a player-event turn. `help_repeat` is a UI convenience:
-  the server may answer it by re-presenting the latest line (engine
-  S142) instead of a model turn; the wire result is identical.
-- `repeat` `{ }` — re-present the latest Sensei line as a fresh `line`
-  event, no model turn (engine S142). If there is nothing to repeat,
-  the server sends `notice` (`nothing_to_repeat`).
+  the server may answer it with the direct replay path (engine S142)
+  instead of a model turn; the wire result is identical.
+- `repeat` `{ }` — replay the latest Sensei utterance: a fresh `line`
+  event plus its audio (from the synthesis cache where possible), no
+  model turn (engine S142). If there is nothing to repeat, the server
+  sends `notice` (`nothing_to_repeat`).
 - `set_preference` `{ "patch": { ...SupportSettings fields... } }` —
   player-set support fields; the server applies them as pinned player
   preferences (engine S40).
@@ -122,20 +128,32 @@ Field names are snake_case, exactly as in the engine spec.
   server-side effect of `talk_start` during a turn, without arming
   capture).
 
-## 4 Audio frames (upload only)
+## 4 Audio frames
 
-An audio upload is: one JSON header frame, then one or more binary
-frames, concatenated in order. There are no audio downloads: Sensei's
-lines are `line` caption events (§5).
+An audio transfer (either direction) is: one JSON header frame, then
+one or more binary frames, concatenated in order.
 
 - Upload header: `{ "type": "audio_begin", "kind": "utterance",
   "format": "pcm_s16le", "sample_rate": 16000, "channels": 1 }`,
   then the PCM bytes, then the `talk_end` message of §3 (which is the
   end marker; there is no `audio_end` for uploads).
-- Generation discipline: a `line` event is rendered only when its
-  `generation_id` matches the latest `turn_started`; stale lines are
-  dropped silently. Cancelling a generation simply means no further
-  events for it are sent or rendered.
+- Download header (one per spoken sentence chunk):
+  `{ "type": "speak_chunk", "utterance_id": "u<n>", "generation_id": <n>,
+    "segment_index": <i>, "chunk_index": <k>, "lang": "ja"|"en",
+    "text": "<sentence text>", "reading": ..., "romaji": ...,
+    "translation": ..., "format": "pcm_s16le", "sample_rate": 24000,
+    "channels": 1, "final": bool }`
+  followed by exactly one binary frame with that chunk's PCM.
+  `final: true` marks the last chunk of the utterance. The matching
+  `line` event (§5) is sent before the utterance's first chunk and
+  carries the caption visibility flags. Sentence chunking, streaming
+  and caching follow web SPEC W25–W28.
+- Generation discipline: the client presents lines and plays chunks
+  only for the current generation; anything whose `generation_id` is
+  older than the latest `turn_started` is dropped silently. When the
+  server cancels a generation it sends `speech_stop`
+  `{ "type": "speech_stop", "generation_id": <n> }`; the client must
+  reach silence within 300 ms (unity U23 / A22 semantics).
 
 ## 5 Server → client messages
 
@@ -167,13 +185,14 @@ lines are `line` caption events (§5).
   `captions` booleans are the effective caption visibility (engine
   S91) so the client never re-derives them. A turn may send several
   `line` events in causal order; each replaces the presented line.
-- `sensei_state` `{ "state": "idle"|"thinking"|"presenting" }`
-  (engine OnSenseiState, S69; `presenting` covers the interval a
-  `line` is on the caption panel).
+- `sensei_state` `{ "state": "idle"|"thinking"|"speaking" }`
+  (engine OnSenseiState, S69; `speaking` covers the interval an
+  utterance's line is presented and its audio plays).
 - `action_result` `{ "ok": bool, "error_code": string|null,
   "revision": <int> }` — reply to `player_select` / `player_move`
   (engine PlayerActionResult, S18/S19). On `ok: false` for a move the
   client snaps the card back and buzzes (unity U22).
+- `speech_stop` (§4).
 - `notice` `{ "code": "didnt_catch"|"couldnt_hear"|"nothing_to_repeat" }`
   — transient UI notices; the client shows the matching line briefly.
 - `error` `{ "code": "<string>", "detail": "<short text>" }` —
@@ -185,9 +204,10 @@ lines are `line` caption events (§5).
 
 A server or client claims conformance when the hidden acceptance suite
 (outside this repo) passes against it: session lifecycle and profile
-restore, one full greeting turn with its `line` events delivered,
-player select/move round trips with snapshot verification, interrupt
-during a turn cancelling it with no stale line presented, repeat,
-player-event turns, and the failure-code mapping. Desktop, controller
-and hand input paths are all exercised against this same protocol;
-there is no second protocol for tests.
+restore, one full greeting turn with its `line` event delivered and
+non-silent audio streamed under the same generation, player
+select/move round trips with snapshot verification, interrupt during
+speech reaching silence inside 300 ms with no stale line presented,
+repeat, player-event turns, and the failure-code mapping. Desktop,
+controller and hand input paths are all exercised against this same
+protocol; there is no second protocol for tests.
