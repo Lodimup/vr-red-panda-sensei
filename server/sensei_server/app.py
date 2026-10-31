@@ -14,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .profile import BANDS, DEFAULT_SUPPORT, PROFILE_ID, ProfileCorrupt, ProfileStore, new_profile, now
 from .scene import Scene, SceneError
+from .tasks import TaskBook
+from .evidence import EvidenceBook
 from .sanitize import clean
 
 FAKE = os.getenv("SENSEI_FAKE_LLM") == "1" and os.getenv("SENSEI_FAKE_ASR") == "1"
@@ -78,7 +80,8 @@ class Session:
         self.session_id = "s-" + uuid.uuid4().hex
         self.turn_id = 0
         self.generation = 0
-        self.task = None
+        self.tasks = TaskBook(self.scene)
+        self.evidence = EvidenceBook(self)
         self.last_line = None
         self.running = None
         self.send_lock = asyncio.Lock()
@@ -88,6 +91,20 @@ class Session:
         self.profile["sessions"].append({"session_id": self.session_id, "started_at": now(),
                                          "preference_changes": self.preference_changes, "next_suggestion": None})
         self.save()
+
+    @property
+    def task(self):
+        return self.tasks.view(self.tasks.active) if self.tasks.active else None
+
+    async def task_changed(self, task):
+        await self.send("task", task=task)
+
+    async def evaluate_task(self, event):
+        self.evidence.scene_event(event)
+        changed = self.tasks.evaluate(event)
+        if changed:
+            await self.task_changed(changed)
+        return changed
 
     def summary(self):
         evidence = [e for e in self.profile["evidence"] if not e.get("superseded")]
@@ -144,6 +161,8 @@ class Session:
         self.turn_id += 1
         self.generation += 1
         turn, generation = self.turn_id, self.generation
+        if not event:
+            self.evidence.utterance(text)
         await self.send("turn_started", turn_id=turn, generation_id=generation)
         await self.send("sensei_state", state="thinking")
         self.running = asyncio.create_task(self.run_turn(turn, generation, text, event))
@@ -194,6 +213,7 @@ class Session:
         if self.last_line is None:
             await self.send("notice", code="nothing_to_repeat")
         else:
+            self.evidence.assistance("repetition")
             await self.line(self.generation, self.last_line)
 
     def save(self):
@@ -234,7 +254,7 @@ class Session:
         self.profile["starting_band"] = band
         self.profile["working_level"] = values[-1]
         if old != values[-1]:
-            self.profile["level_history"].append({"from": old, "to": values[-1], "reason": "band", "at": now()})
+            self.profile["level_history"].append({"from": old, "to": values[-1], "reason": "band", "at": now(), "attempt_count": len(self.profile["evidence"])})
         self.save()
         await self.send("support", support=self.profile["support"])
         await self.snapshot()
@@ -245,12 +265,13 @@ class Session:
             if not isinstance(ident, str):
                 raise SceneError("invalid_arguments")
             if msg["type"] == "player_select":
-                self.scene.select(ident, self.turn_id)
+                event = self.scene.select(ident, self.turn_id)
             else:
                 region, container = msg.get("region"), msg.get("container_id")
                 if container is not None and not isinstance(container, str):
                     raise SceneError("invalid_arguments")
-                self.scene.move(ident, region, container, "player", self.turn_id)
+                event = self.scene.move(ident, region, container, "player", self.turn_id)
+            await self.evaluate_task(event)
             await self.snapshot()
             await self.send("action_result", ok=True, error_code=None, revision=self.scene.revision)
         except SceneError as exc:
@@ -316,7 +337,9 @@ class Session:
                 ids = [obj["id"] for obj in self.scene.instances]
                 self.scene.remove(ids, self.turn_id)
             self.scene.selected_id = None
-            self.task = self.last_line = None
+            self.tasks = TaskBook(self.scene)
+            self.evidence = EvidenceBook(self)
+            self.last_line = None
             self.history.clear()
             await self.send("support", support=self.profile["support"])
             await self.snapshot()
