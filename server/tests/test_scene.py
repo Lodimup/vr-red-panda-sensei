@@ -31,6 +31,17 @@ class SceneTests(unittest.TestCase):
         self.assertEqual(failure.exception.code, "invalid_destination")
         self.assertEqual(before, scene.snapshot({}, None))
 
+    def test_move_updates_snapshot(self):
+        scene = Scene()
+        scene.spawn([{"catalog_id": "apple", "region": "center"}], 1)
+        scene.select("apple_1", 1)
+        scene.move("apple_1", "left", None, "player", 1)
+
+        snapshot = scene.snapshot({}, None)
+        self.assertEqual(snapshot["revision"], 2)
+        self.assertEqual(snapshot["instances"][0]["region"], "left")
+        self.assertEqual(snapshot["instances"][0], scene.find("apple_1"))
+
     def test_spawn_validation_is_atomic(self):
         scene = Scene()
         for objects, code in [

@@ -143,3 +143,17 @@ class Scene:
                     affected.append(inner["id"])
         return self._event("moved", actor, affected, turn_id, origin, container_id or region,
                            purpose if actor == "sensei" else None)
+
+    def remove(self, ids: list[str], turn_id: int) -> dict[str, Any]:
+        if (not isinstance(ids, list) or not 1 <= len(ids) <= 16
+                or any(not isinstance(i, str) for i in ids) or len(set(ids)) != len(ids)):
+            raise SceneError("invalid_arguments")
+        if any(self.find(i) is None for i in ids):
+            raise SceneError("unknown_object")
+        removed = set(ids)
+        if any(obj["container_id"] in removed and obj["id"] not in removed for obj in self.instances):
+            raise SceneError("invalid_arguments", "container_not_empty")
+        self.instances = [obj for obj in self.instances if obj["id"] not in removed]
+        if self.selected_id in removed:
+            self.selected_id = None
+        return self._event("removed", "sensei", ids, turn_id)
