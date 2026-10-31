@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 
-export const loops = ['idle', 'listen', 'think', 'speak', 'point', 'encourage'] as const;
+export const loops = ['listen', 'think', 'speak', 'point', 'encourage'] as const;
 export type Loop = typeof loops[number];
 
 // Non-green bounds at 1 s in the 960 × 960 source frames, in pixels.
 const bounds: Record<Loop, [number, number, number, number]> = {
-  idle: [252, 110, 727, 914], listen: [222, 118, 755, 914],
+  listen: [222, 118, 755, 914],
   think: [238, 111, 723, 913], speak: [200, 76, 745, 913],
   point: [174, 96, 825, 915], encourage: [248, 92, 713, 899],
 };
@@ -14,7 +14,7 @@ export function poseLoop(pose: string): Loop {
   switch (pose) {
     case 'listen': case 'think': case 'speak': case 'point': case 'encourage': return pose;
     case 'demonstrate': return 'point';
-    default: return 'idle';
+    default: return 'listen'; // RULING(Handler 2026-10-31): idle uses the listen loop.
   }
 }
 
