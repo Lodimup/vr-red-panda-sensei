@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {Text} from 'troika-three-text';
 import {layout,regionAt,type Placement} from './layout';
 import {captionRows} from './captions';
+import {createEnvironment} from './environment';
 import type {State,Instance} from './types';
 
 const font='/fonts/NotoSansJP.ttf';
@@ -12,7 +13,7 @@ export class PracticeScene {
   constructor(private host:HTMLElement,private select:(id:string)=>void,private move:(id:string,region:string|null,container:string|null)=>void) {
     this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));this.renderer.xr.enabled=true;this.renderer.setClearColor(0xe9e2d5,1);host.appendChild(this.renderer.domElement);
     this.camera.position.set(0,1.65,2.3);this.camera.lookAt(0,.95,0);this.scene.add(this.anchor);
-    const floor=new THREE.Mesh(new THREE.PlaneGeometry(8,8),new THREE.MeshBasicMaterial({color:0xd9d0c1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.01;this.anchor.add(floor);
+    this.anchor.add(createEnvironment());
     const mat=new THREE.Mesh(new THREE.BoxGeometry(1.4,.035,.5),new THREE.MeshBasicMaterial({color:0x907e69}));mat.position.set(0,.7825,0);this.anchor.add(mat);
     for(const x of [-.225,.225]){const line=new THREE.Mesh(new THREE.BoxGeometry(.002,.002,.49),new THREE.MeshBasicMaterial({color:0xd9c7a9}));line.position.set(x,.801,0);this.anchor.add(line);}
     this.sensei=new THREE.Mesh(new THREE.PlaneGeometry(.75,.75),new THREE.MeshBasicMaterial({transparent:true,depthWrite:false,opacity:.9,side:THREE.DoubleSide}));(this.sensei.material as THREE.MeshBasicMaterial).onBeforeCompile=shader=>{shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.a *= mix(0.25, 1.0, clamp(vMapUv.y / 0.35, 0.0, 1.0));');};this.sensei.position.set(-.85,1.125,.25);this.anchor.add(this.sensei);
