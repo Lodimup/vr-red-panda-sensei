@@ -17,3 +17,18 @@ describe('XR inputs', () => {
     expect(a.talkStart).toHaveBeenCalledTimes(1);expect(a.talkEnd).toHaveBeenCalledTimes(1);
   });
 });
+describe('XR inputs beyond two sources', () => {
+  it('polls a third source and keeps talking until every hold releases', () => {
+    const a={talkStart:vi.fn(),talkEnd:vi.fn(),repeat:vi.fn(),hint:vi.fn(),menu:vi.fn(),grabStart:vi.fn(),grabEnd:vi.fn(),grabCancel:vi.fn()};const input=new XRInput(a);
+    input.poll(0,source('right',[4]));input.poll(2,source('right',[4]));
+    expect(a.talkStart).toHaveBeenCalledTimes(1);
+    input.poll(0,source('right',[]));expect(a.talkEnd).not.toHaveBeenCalled();
+    input.poll(3,source('left',[4]));expect(a.hint).toHaveBeenCalledTimes(1);
+    input.poll(2,source('right',[]));expect(a.talkEnd).toHaveBeenCalledTimes(1);
+  });
+  it('releases a higher-index hold on disconnect', () => {
+    const a={talkStart:vi.fn(),talkEnd:vi.fn(),repeat:vi.fn(),hint:vi.fn(),menu:vi.fn(),grabStart:vi.fn(),grabEnd:vi.fn(),grabCancel:vi.fn()};const input=new XRInput(a);
+    input.poll(2,source('right',[1,4]));expect(a.talkStart).toHaveBeenCalledTimes(1);expect(a.grabStart).toHaveBeenCalledWith(2);
+    input.disconnect(2);expect(a.talkEnd).toHaveBeenCalledTimes(1);expect(a.grabCancel).toHaveBeenCalledWith(2);
+  });
+});
