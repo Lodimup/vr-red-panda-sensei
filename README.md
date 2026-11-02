@@ -2,6 +2,28 @@
 
 Red Panda Sensei is a mixed-reality Japanese practice companion for Quest. A ghostly red panda guides conversations and activities with a tabletop of cardboard standees, adapting support to the learner while an AI game master controls the scene and tracks practice.
 
+## WebXR app (current version)
+
+The current version of Red Panda Sensei is a WebXR app: a three.js client in the browser, backed by a Python server. Sensei appears as pre-generated video loops in passthrough; hold a controller button (or push-to-talk on desktop) to speak. Speech is recognized on the server (SenseVoice), an LLM game master runs the practice scene, and replies come back as captions above Sensei plus cloned-voice speech (Qwen3-TTS).
+
+- `web/` - the wire protocol ([PROTOCOL.md](web/PROTOCOL.md)) and product spec ([SPEC.md](web/SPEC.md)) shared by client and server.
+- `client/` - Vite + TypeScript + three.js WebXR client.
+- `server/` - FastAPI + PydanticAI server; it also serves the built client.
+
+Run it:
+
+```bash
+cd client && npm ci && npm run build   # produces client/dist
+cd ../server && uv sync
+SENSEI_LLM_API_KEY=<your OpenRouter key> SENSEI_VOICE_REF=<reference .wav for the cloned voice> SENSEI_CLIENT_DIR=../client/dist uv run python -m sensei_server
+```
+
+Then open the server URL in a WebXR-capable browser (the `PORT` env var sets the port, default 8000). WebXR and microphone access need a secure context (HTTPS or localhost). Set `SENSEI_TTS=off` to run captions-only. See [server/README.md](server/README.md) for all environment variables.
+
+## Unity prototype (v0.1.2, frozen)
+
+The original build was a Unity Quest app. It is frozen at v0.1.2 and kept as the earlier prototype; the sections below describe that build.
+
 ## In the headset
 
 Sensei greets you beside a practice area in passthrough. Select a card with the right trigger; grab it with the right grip and release it over a region or container. Hold **A** to talk, **B** to repeat, **X** for a hint, and tap **Y** for the menu. Hold **Y** for one second to re-place the area; click the left stick to toggle slower speech.
@@ -78,6 +100,9 @@ The voice test corpus uses synthetic macOS speech, so it does not establish perf
 
 ## Repository
 
+- `client/` - WebXR client (Vite + TypeScript + three.js).
+- `server/` - WebXR server (FastAPI + PydanticAI).
+- `web/` - WebXR protocol and product specification.
 - `sensei-engine/` — game-master library, CLI, tests and specification.
 - `unity/` — Quest app, speech packages, notices and specification.
 - `tools/unity/` — build, model and device scripts.
