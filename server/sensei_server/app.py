@@ -99,6 +99,7 @@ class Session:
         self.utterance_id = 0
         self.running = None
         self.send_lock = asyncio.Lock()
+        self.closed = False
         self.audio = None
         self.history = []
         self.preference_changes = []
@@ -150,7 +151,12 @@ class Session:
 
     async def send(self, kind: str, **data):
         async with self.send_lock:
-            await self.ws.send_json({"type": kind, "v": 1, **data})
+            if self.closed:
+                return
+            try:
+                await self.ws.send_json({"type": kind, "v": 1, **data})
+            except (WebSocketDisconnect, RuntimeError):
+                self.closed = True
 
     async def snapshot(self):
         await self.send("scene", snapshot=self.scene.snapshot(self.profile["support"], self.task))
@@ -176,7 +182,7 @@ class Session:
                 return
             async def send_chunk():
                 async with self.send_lock:
-                    if generation != self.generation:
+                    if generation != self.generation or self.closed:
                         return
                     header = {"type": "speak_chunk", "v": 1, "utterance_id": utterance,
                               "generation_id": generation, "segment_index": segment_index,
@@ -184,8 +190,11 @@ class Session:
                               "reading": segment.get("reading"), "romaji": segment.get("romaji"),
                               "translation": segment.get("translation"), "format": "pcm_s16le",
                               "sample_rate": 24000, "channels": 1, "final": chunk_index == len(chunks) - 1}
-                    await self.ws.send_json(header)
-                    await self.ws.send_bytes(pcm)
+                    try:
+                        await self.ws.send_json(header)
+                        await self.ws.send_bytes(pcm)
+                    except (WebSocketDisconnect, RuntimeError):
+                        self.closed = True
             # Header and binary are one protocol transfer, even if interrupted.
             transfer = asyncio.create_task(send_chunk())
             try:
@@ -451,6 +460,7 @@ async def websocket(ws: WebSocket):
     finally:
         if session:
             app.state.sessions.discard(session)
+            session.closed = True
             with suppress(Exception):
                 await session.cancel()
 

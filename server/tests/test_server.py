@@ -242,3 +242,43 @@ def test_asr_initialization_failure_keeps_no_key_server_usable(tmp_path, monkeyp
             send(ws, "player_event", kind="session_start")
             result = receive_until(ws, "turn_ended")[-1]["result"]
             assert result["status"] == "failed" and result["error_code"] == "llm_not_configured"
+
+
+class ClosingSocket:
+    """A socket that dies after the first successful send."""
+
+    def __init__(self):
+        self.frames = []
+
+    async def send_json(self, msg):
+        if self.frames:
+            from fastapi import WebSocketDisconnect
+            raise WebSocketDisconnect(code=1001)
+        self.frames.append(msg)
+
+    async def send_bytes(self, data):
+        self.frames.append(data)
+
+
+def test_send_on_closed_socket_does_not_raise(tmp_path, monkeypatch):
+    import asyncio
+    from sensei_server.app import Session
+    monkeypatch.setenv("SENSEI_PROFILE_DIR", str(tmp_path))
+    session = Session(ClosingSocket(), "closed-socket")
+    asyncio.run(session.send("welcome"))
+    asyncio.run(session.send("scene"))
+    assert session.closed is True
+
+
+def test_turn_ends_quietly_when_client_disconnects_mid_turn(tmp_path, monkeypatch):
+    import asyncio
+    from sensei_server.app import Session
+    monkeypatch.setenv("SENSEI_PROFILE_DIR", str(tmp_path))
+    session = Session(ClosingSocket(), "mid-turn")
+
+    async def drive():
+        await session.start("session_start", True)
+        await session.running
+
+    asyncio.run(drive())
+    assert session.closed is True
