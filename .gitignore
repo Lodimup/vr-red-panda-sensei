@@ -26,3 +26,6 @@ unity/**/*.slnx
 unity/RedPandaSensei/Assets/StreamingAssets/e2e/
 unity/RedPandaSensei/Assets/StreamingAssets/e2e.meta
 .e2e-out/
+
+# make up / make run state (server pid, log, local learner profiles)
+.run/
