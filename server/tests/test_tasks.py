@@ -102,7 +102,10 @@ def test_player_action_emits_completed_task_and_scene(session):
     s.scene.spawn([{'catalog_id': 'apple'}], 0)
     task(s, 'listen_arrange', [{'type': 'in_region', 'object_id': 'apple_1', 'region': 'right'}])
     asyncio.run(s.action({'type': 'player_move', 'instance_id': 'apple_1', 'region': 'right'}))
-    assert [m['type'] for m in s.ws.messages] == ['task', 'scene', 'action_result']
+    types = [m['type'] for m in s.ws.messages]
+    assert types[:3] == ['task', 'scene', 'action_result']
+    # Finishing a task by hand starts Sensei's reaction turn.
+    assert types[3:5] == ['turn_started', 'sensei_state']
     assert s.ws.messages[0]['task']['status'] == 'completed'
     assert s.ws.messages[1]['snapshot']['active_task'] is None
     assert s.ws.messages[2]['ok'] is True
@@ -126,3 +129,15 @@ def test_hidden_level_in_task_instruction_is_rejected(session):
     with pytest.raises(SceneError, match='invalid_arguments'):
         s.tasks.start('listen_arrange', {'english': 'Your level is N5.'}, [{'dimension': 'listening', 'key': 'apple'}], [{'type': 'selected', 'object_id': 'apple_1'}], [], None, False, s.profile['support'], 1)
     assert s.scene.events == before
+
+
+def test_placing_on_the_table_completes_a_listen_arrange_task(session):
+    s = session
+    s.scene.spawn([{'catalog_id': 'apple'}, {'catalog_id': 'book'}], 1)
+    task(s, 'listen_arrange', [{'type': 'in_region', 'object_id': 'apple_1', 'region': 'table'}], {'dimension': 'listening', 'key': 'table_ue'})
+    s.turn_id = 1
+    other = s.scene.move('book_1', 'table', None, 'player', 1)
+    assert s.tasks.evaluate(other) is None
+    e = s.scene.move('apple_1', 'table', None, 'player', 1)
+    done = s.tasks.evaluate(e)
+    assert done['status'] == 'completed' and done['completed_by'] == 'player'

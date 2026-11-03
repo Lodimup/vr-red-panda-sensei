@@ -27,14 +27,14 @@ case 'speak_chunk':pending={chunk:m as Chunk,line:currentLine};break;
 case 'speech_stop':if(m.generation_id>=speech.guard.current){speech.stop(m.generation_id);currentLine=null;lines.interrupt();}break;
 case 'scene':{const s=m.snapshot as Snapshot;const changed=store.state.task?.task_id!==s.active_task?.task_id;store.update({snapshot:s,support:s.support,task:s.active_task,...(changed?{hint:null}:{})});break;}
 case 'support':store.update({support:m.support});break;
-case 'task':store.update({task:m.task,hint:null});break;
+case 'task':if(m.task?.status==='completed'&&store.state.task?.status!=='completed')speech.chime('success');store.update({task:m.task,hint:null});break;
 case 'hint':store.update({hint:m.card as Hint});break;
 case 'transcript':store.update({said:transcriptMessage(m.text)});break;
 case 'sensei_state':store.update({sensei:m.state});break;
 case 'highlight':{const highlights={...store.state.highlights};for(const id of m.instance_ids)highlights[id]=performance.now()+m.duration_ms;store.update({highlights});break;}
 case 'animate':{const pose=m.animation;if(['idle_float','listen','think','speak','point','encourage','demonstrate'].includes(pose)){store.update({pose,poseTarget:m.target_id});setTimeout(()=>{if(store.state.pose===pose)store.update({pose:null,poseTarget:null});},3000);}break;}
 case 'turn_ended':{const result=m.result;if(store.state.voice!=='Ready')lines.end(result.generation_id);const patch:Partial<typeof store.state>={hint:null,sensei:'idle'};if(result.status==='failed'){patch.captionError=errors[result.error_code]??'Something went wrong. Try again.';patch.caption=null;patch.llm=patch.captionError;}store.update(patch);break;}
-case 'action_result':if(!m.ok){store.update({said:`Could not move or select: ${m.error_code??'try again'}`});navigator.vibrate?.(50);}break;
+case 'action_result':speech.chime(m.ok?'drop':'fail');if(!m.ok){store.update({said:`Could not move or select: ${m.error_code??'try again'}`});navigator.vibrate?.(50);}break;
 case 'notice':{const lines:Record<string,string>={didnt_catch:didntCatch,couldnt_hear:"Couldn't hear that",nothing_to_repeat:'Nothing to repeat yet'};store.update({said:lines[m.code]??m.code});break;}
 case 'summary':store.update({summary:m.summary,menu:true});break;
 case 'error':store.update({connection:`${m.code}: ${m.detail}`});break;

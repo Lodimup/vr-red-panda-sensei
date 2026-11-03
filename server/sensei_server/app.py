@@ -328,9 +328,14 @@ class Session:
                 if container is not None and not isinstance(container, str):
                     raise SceneError("invalid_arguments")
                 event = self.scene.move(ident, region, container, "player", self.turn_id)
-            await self.evaluate_task(event)
+            changed = await self.evaluate_task(event)
             await self.snapshot()
             await self.send("action_result", ok=True, error_code=None, revision=self.scene.revision)
+            # Hands-on play gets an answer: Sensei reacts when the learner finishes a task or hands Sensei something.
+            if changed and changed.get("status") == "completed" and changed.get("completed_by") == "player":
+                await self.start("task_done_by_player", True)
+            elif msg["type"] == "player_move" and region == "sensei_side":
+                await self.start("object_given", True)
         except SceneError as exc:
             await self.send("action_result", ok=False, error_code=exc.code, revision=self.scene.revision)
 

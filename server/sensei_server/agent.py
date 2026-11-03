@@ -22,6 +22,8 @@ EVENTS = {
     "help_hint": "The learner pressed the Hint button. Give one hint for the active task with show_hint, or a useful phrase if there is no task.",
     "help_english": "The learner asked for an English explanation of what is happening right now.",
     "area_placed": "The learner moved the practice area. The scene did not change. Do not respond unless something needs saying.",
+    "task_done_by_player": "The learner just completed the active task with their own hands (see Player events). React like a delighted teacher in one short speak call: praise in Japanese (with English per support settings) and name what they did, e.g. りんごをテーブルの上に置きましたね！. Record the attempt for the task target (the movement is the evidence). Then offer the next small hands-on task: another placing task (on the table, into the box or bag, left or right of another object) or a request task.",
+    "object_given": "The learner just handed you an object by dropping it on you (see Player events: moved to sensei_side). Thank them in Japanese (ありがとう！) and say what it is (これはりんごですね). If a task asked for it, it is complete; otherwise ask them to give or place something else.",
 }
 
 
@@ -75,7 +77,7 @@ class Predicate(BaseModel):
     type: Literal['selected', 'in_region', 'contained_in', 'quantity', 'left_of', 'right_of', 'unchanged', 'before']
     object_id: str | None = None
     selector: Selector | None = None
-    region: Literal['left', 'center', 'right', 'learner_hand', 'sensei_side'] | None = None
+    region: Literal['left', 'center', 'right', 'table', 'learner_hand', 'sensei_side'] | None = None
     container_id: str | None = None
     reference_id: str | None = None
     count: int | None = None

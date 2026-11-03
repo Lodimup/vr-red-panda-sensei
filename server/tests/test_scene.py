@@ -18,6 +18,15 @@ class SceneTests(unittest.TestCase):
         self.assertEqual(scene.events[-1]["actor"], "player")
         self.assertNotIn("variant", scene.instances[0])
 
+    def test_table_is_a_surface_with_its_own_slots(self):
+        scene = Scene()
+        scene.spawn([{"catalog_id": "apple"}, {"catalog_id": "pen", "region": "table"}], 1)
+        self.assertEqual(scene.find("pen_1")["region"], "table")
+        self.assertEqual(scene.find("pen_1")["slot"], 1)
+        scene.move("apple_1", "table", None, "player", 1)
+        self.assertEqual((scene.find("apple_1")["region"], scene.find("apple_1")["slot"]), ("table", 2))
+        self.assertEqual(scene.events[-1]["to"], "table")
+
     def test_container_movement_and_failed_moves_are_atomic(self):
         scene = Scene()
         scene.spawn([{"catalog_id": "box"}, {"catalog_id": "apple"}], 1)
