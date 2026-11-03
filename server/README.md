@@ -3,8 +3,12 @@
 Requires Python 3.12 or newer. Install dependencies with `uv sync`, then run
 `uv run python -m sensei_server`. `PORT` controls the listening port (default
 8000), `SENSEI_PROFILE_DIR` controls profile storage, and `SENSEI_CLIENT_DIR`
-can point to a built client directory. The server caches the SenseVoice model
-outside the repository and downloads it on first use.
+can point to a built client directory.
+
+Speech recognition uses Muse Voice Transcribe (`muse-voice-transcribe-1.0`,
+`POST https://api.meta.ai/v1/asr/transcribe`) when `SENSEI_ASR_API_KEY` holds a
+Meta Model API key. Without it the server uses local SenseVoice, which it caches
+outside the repository and downloads on first use.
 
 Set `SENSEI_VOICE_REF` to the path of a reference WAV for Qwen3-TTS. The
 server loads and warms the voice before accepting connections; model weights

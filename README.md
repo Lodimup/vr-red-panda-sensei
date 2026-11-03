@@ -6,9 +6,10 @@ It runs as a WebXR app: open a URL in the Quest Browser, no install needed.
 
 ## Built with Meta Muse
 
-Muse.ai, Muse Wonder, Muse Video gen and Muse Spark were used both to develop Red Panda Sensei and to run it.
+Muse.ai, Muse Wonder, Muse Video gen, Muse Spark and Muse Voice Transcribe were used both to develop Red Panda Sensei and to run it.
 
 - **Muse Spark** is Sensei's game master at runtime. Every reply, scene change, task and progress record comes from Muse Spark (`meta/muse-spark-1.3-contributor`, called through OpenRouter).
+- **Muse Voice Transcribe** turns the learner's push-to-talk speech into text (`muse-voice-transcribe-1.0`, Meta Model API), with a Japanese and English language bias.
 - **Muse.ai, Muse Wonder and Muse Video gen** were used during development of the app and its content.
 
 ## Play it
@@ -33,16 +34,16 @@ With hands only, repeat, hint and the menu are not mapped yet; pick up a control
 ```mermaid
 flowchart LR
   B[Quest Browser: three.js WebXR client] <-->|WebSocket| S[Python server]
-  S --> A[SenseVoice speech recognition]
+  S --> A[Muse Voice Transcribe speech recognition]
   S <--> M[Muse Spark game master via OpenRouter]
   S --> T[Qwen3-TTS cloned Sensei voice]
 ```
 
 - `client/`: Vite + TypeScript + three.js WebXR client. Sensei is drawn from pre-generated video loops; objects are image cutouts; captions sit above Sensei.
-- `server/`: FastAPI + PydanticAI. It receives push-to-talk audio, recognises it with SenseVoice, runs the game master on Muse Spark, and streams Sensei's speech back sentence by sentence.
+- `server/`: FastAPI + PydanticAI. It receives push-to-talk audio, recognises it with Muse Voice Transcribe, runs the game master on Muse Spark, and streams Sensei's speech back sentence by sentence.
 - `web/`: the wire protocol ([PROTOCOL.md](web/PROTOCOL.md)) and product spec ([SPEC.md](web/SPEC.md)) shared by client and server.
 
-Speech recognition and speech synthesis run on the server machine. Recognised text and game context go to Muse Spark.
+Push-to-talk audio goes to Muse Voice Transcribe; the recognised text and game context go to Muse Spark. Speech synthesis runs on the server machine. Without `SENSEI_ASR_API_KEY` the server falls back to local SenseVoice recognition.
 
 ## Run it
 
@@ -66,7 +67,7 @@ The Makefile reads `.env` next to it (gitignored; `KEY=value` lines, no quotes).
 | `make run` | run the server in the foreground (no tunnel) |
 | `make url` | print the URL again |
 
-Variables: `PORT` (default 8000), `HTTPS_PORT` (default 443), `VOICE_REF` (reference WAV for Sensei's cloned voice; without it the app runs captions-only), `PROFILE_DIR` (learner profiles, default `.run/profiles`). The key is passed only to the server process environment and is never written to disk. More server settings: [server/README.md](server/README.md).
+Variables: `PORT` (default 8000), `HTTPS_PORT` (default 443), `VOICE_REF` (reference WAV for Sensei's cloned voice; without it the app runs captions-only), `PROFILE_DIR` (learner profiles, default `.run/profiles`), `SENSEI_ASR_API_KEY` (Meta Model API key for Muse Voice Transcribe; without it speech is recognised locally with SenseVoice). The key is passed only to the server process environment and is never written to disk. More server settings: [server/README.md](server/README.md).
 
 ## Status and limits
 
