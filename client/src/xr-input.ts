@@ -14,7 +14,13 @@ export class XRInput {
     if (!was && this.talking.size) this.actions.talkStart();
     if (was && !this.talking.size) this.actions.talkEnd();
   }
-  hand(index: number, down: boolean) { this.talk(`hand${index}`, down); }
+  private handGrabs = new Set<number>();
+  /** A hand pinch that starts on an object grabs it; any other pinch holds talk. */
+  hand(index: number, down: boolean, onObject = false) {
+    if (down && onObject && !this.talking.has(`hand${index}`)) { this.handGrabs.add(index); this.actions.grabStart(index); return; }
+    if (!down && this.handGrabs.delete(index)) { this.actions.grabEnd(index); return; }
+    this.talk(`hand${index}`, down);
+  }
   poll(index: number, source: XRInputSource | null) {
     const old = this.previous.get(index) ?? [];
     const buttons = source && !source.hand ? source.gamepad?.buttons : undefined;
@@ -34,7 +40,7 @@ export class XRInput {
   }
   disconnect(index: number) {
     const old = this.previous.get(index);
-    if (old?.[1]) this.actions.grabCancel(index);
+    if (old?.[1] || this.handGrabs.delete(index)) this.actions.grabCancel(index);
     this.previous.delete(index); this.talk(`button${index}`, false); this.hand(index, false);
   }
 }
