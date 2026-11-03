@@ -4,6 +4,10 @@ Red Panda Sensei is a mixed-reality Japanese practice companion for Meta Quest. 
 
 It runs as a WebXR app: open a URL in the Quest Browser, no install needed.
 
+[![Red Panda Sensei demo video: Sensei in a Quest 3 passthrough room](https://img.youtube.com/vi/aPoV16frO-I/sddefault.jpg)](https://www.youtube.com/watch?v=aPoV16frO-I)
+
+▶ [Watch the 2-minute demo on YouTube](https://www.youtube.com/watch?v=aPoV16frO-I)
+
 ## Built with Meta Muse
 
 Muse.ai, Muse Wonder, Muse Video gen, Muse Spark and Muse Voice Transcribe were used both to develop Red Panda Sensei and to run it.
