@@ -51,8 +51,8 @@ async def lifespan(app: FastAPI):
     app.state.sessions = set()
     async def load():
         try:
-            from .asr import Recognizer
-            app.state.asr = await asyncio.to_thread(Recognizer)
+            from .asr import create_recognizer
+            app.state.asr = await asyncio.to_thread(create_recognizer)
             app.state.asr_status = "ready"
         except Exception:
             app.state.asr_status = "failed"

@@ -227,6 +227,7 @@ def test_asr_initialization_failure_keeps_no_key_server_usable(tmp_path, monkeyp
     import sensei_server.app as service
     import sensei_server.asr as asr
     monkeypatch.setattr(service, "FAKE", False)
+    monkeypatch.delenv("SENSEI_ASR_API_KEY", raising=False)
     monkeypatch.delenv("SENSEI_LLM_API_KEY", raising=False)
     monkeypatch.setenv("SENSEI_PROFILE_DIR", str(tmp_path))
     def fail():
