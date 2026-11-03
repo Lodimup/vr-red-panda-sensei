@@ -49,9 +49,11 @@ Speech recognition and speech synthesis run on the server machine. Recognised te
 Needs macOS or Linux with Node.js (npm), [uv](https://docs.astral.sh/uv/), and the [Tailscale](https://tailscale.com/) CLI logged in. WebXR and the microphone require HTTPS; `make up` publishes the server over Tailscale HTTPS for that reason.
 
 ```bash
-export SENSEI_LLM_API_KEY=<your OpenRouter key>   # optional: make asks for it (hidden) when unset
-make up VOICE_REF=/path/to/sensei-voice.wav
+cp .env.example .env   # then fill in SENSEI_LLM_API_KEY and VOICE_REF
+make up
 ```
+
+The Makefile reads `.env` next to it (gitignored; `KEY=value` lines, no quotes). Values given on the command line (`make up PORT=8010`) override `.env`. If the key is empty, `make up` asks for it (input hidden).
 
 `make up` installs dependencies, builds the client, starts the server in the background, waits until it is healthy, publishes it with `tailscale serve`, and prints the URL to open. The first start downloads the speech models and warms up the voice, which can take several minutes.
 

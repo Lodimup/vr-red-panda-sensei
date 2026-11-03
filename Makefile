@@ -3,8 +3,15 @@
 #   make up VOICE_REF=/path/to/ref.wav   build, start the server in the background, publish over Tailscale HTTPS
 #   make down                            stop the server and remove the Tailscale route
 #
-# The OpenRouter key comes from SENSEI_LLM_API_KEY; when it is unset, `make up` / `make run` ask for it
-# (input hidden). Logic lives in tools/web/serve.sh.
+# The OpenRouter key comes from SENSEI_LLM_API_KEY (environment or .env); when it is unset, `make up` / `make run`
+# ask for it (input hidden). Logic lives in tools/web/serve.sh.
+
+# Settings come from .env next to this Makefile when it exists (KEY=value lines, no quotes; see .env.example).
+# Command-line values (make up PORT=8010) override .env; .env overrides the defaults below.
+ifneq (,$(wildcard $(dir $(lastword $(MAKEFILE_LIST))).env))
+include $(dir $(lastword $(MAKEFILE_LIST))).env
+export $(shell sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*=.*/\1/p' $(dir $(lastword $(MAKEFILE_LIST))).env)
+endif
 
 PORT ?= 8000
 HTTPS_PORT ?= 443
