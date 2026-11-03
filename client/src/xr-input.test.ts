@@ -1,5 +1,6 @@
 import {describe, expect, it, vi} from 'vitest';
 import {XRInput} from './xr-input';
+function actions(){return {talkStart:vi.fn(),talkEnd:vi.fn(),repeat:vi.fn(),hint:vi.fn(),menu:vi.fn(),grabStart:vi.fn(),grabEnd:vi.fn(),grabCancel:vi.fn()};}
 function source(handedness: 'left'|'right', pressed: number[] = []): XRInputSource {
   return {handedness, gamepad: {buttons: Array.from({length: 6}, (_, i) => ({pressed: pressed.includes(i)}))}} as unknown as XRInputSource;
 }
@@ -30,5 +31,20 @@ describe('XR inputs beyond two sources', () => {
     const a={talkStart:vi.fn(),talkEnd:vi.fn(),repeat:vi.fn(),hint:vi.fn(),menu:vi.fn(),grabStart:vi.fn(),grabEnd:vi.fn(),grabCancel:vi.fn()};const input=new XRInput(a);
     input.poll(2,source('right',[1,4]));expect(a.talkStart).toHaveBeenCalledTimes(1);expect(a.grabStart).toHaveBeenCalledWith(2);
     input.disconnect(2);expect(a.talkEnd).toHaveBeenCalledTimes(1);expect(a.grabCancel).toHaveBeenCalledWith(2);
+  });
+
+  it('grabs with a hand pinch that starts on an object and releases on pinch end', () => {
+    const a = actions(); const input = new XRInput(a);
+    input.hand(0,true,true); expect(a.grabStart).toHaveBeenCalledWith(0); expect(a.talkStart).not.toHaveBeenCalled();
+    input.hand(0,false); expect(a.grabEnd).toHaveBeenCalledWith(0); expect(a.talkEnd).not.toHaveBeenCalled();
+  });
+  it('a hand pinch off any object still holds talk', () => {
+    const a = actions(); const input = new XRInput(a);
+    input.hand(1,true,false); expect(a.talkStart).toHaveBeenCalledTimes(1); expect(a.grabStart).not.toHaveBeenCalled();
+    input.hand(1,false); expect(a.talkEnd).toHaveBeenCalledTimes(1);
+  });
+  it('losing a hand mid-grab cancels the grab', () => {
+    const a = actions(); const input = new XRInput(a);
+    input.hand(0,true,true); input.disconnect(0); expect(a.grabCancel).toHaveBeenCalledWith(0); expect(a.talkEnd).not.toHaveBeenCalled();
   });
 });

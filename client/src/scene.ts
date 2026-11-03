@@ -33,7 +33,7 @@ export class PracticeScene {
       const ray=controllerRay(),model=controllerModel();ray.visible=false;model.visible=false;controller.add(ray);grip.add(model);
       controller.addEventListener('connected',event=>{const source=event.data as XRInputSource;this.xrSources[slot]=source;ray.visible=!source.hand;model.visible=!source.hand;});
       controller.addEventListener('disconnected',()=>{this.xrInput.disconnect(slot);this.xrSources[slot]=null;ray.visible=false;model.visible=false;});
-      controller.addEventListener('selectstart',()=>{if(this.xrSources[slot]?.hand)this.xrInput.hand(slot,true);});
+      controller.addEventListener('selectstart',()=>{if(!this.xrSources[slot]?.hand)return;this.rayFrom(controller);this.xrInput.hand(slot,true,!this.xrGrab&&!!this.hit());});
       controller.addEventListener('selectend',()=>{if(this.xrSources[slot]?.hand)this.xrInput.hand(slot,false);});
       controller.addEventListener('select',()=>{if(this.xrSources[slot]?.hand || this.xrGrab)return;this.rayFrom(controller);const hit=this.hit();if(hit)this.select(hit.instance.id);});
       this.xrRays.push(controller);this.xrSources.push(null);this.scene.add(controller,grip);
