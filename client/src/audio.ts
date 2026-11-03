@@ -21,6 +21,18 @@ export class SpeechPlayer {
   private nextTime = 0;
   constructor(private caption: (line: Line) => void, private ended: (generation: number) => void) {}
   async unlock() {this.context ??= new AudioContext(); await this.context.resume(); this.schedule();}
+  /** Short synthesized cue for hands-on actions: a soft tick on a drop, a rising arpeggio when a task is done, a low buzz on a refused move. */
+  chime(kind: 'drop' | 'success' | 'fail') {
+    const ctx = this.context; if (!ctx) return;
+    const notes = kind === 'success' ? [523.25, 659.25, 783.99, 1046.5] : kind === 'drop' ? [880] : [196, 164.81];
+    const step = kind === 'success' ? .09 : .12, length = kind === 'drop' ? .08 : .22;
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain(), at = ctx.currentTime + i * step;
+      osc.type = kind === 'fail' ? 'square' : 'sine'; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(.0001, at); gain.gain.exponentialRampToValueAtTime(kind === 'fail' ? .05 : .18, at + .01); gain.gain.exponentialRampToValueAtTime(.0001, at + length);
+      osc.connect(gain).connect(ctx.destination); osc.start(at); osc.stop(at + length + .02);
+    });
+  }
   isPlaying() {return this.sources.size > 0;}
   level() {if (!this.sources.size || !this.analyser) return 0; const data = new Float32Array(this.analyser.fftSize); this.analyser.getFloatTimeDomainData(data); return Math.sqrt(data.reduce((sum, n) => sum + n*n, 0) / data.length);}
   advance(id: number) {if (!this.guard.advance(id)) return false; this.silence(); return true;}

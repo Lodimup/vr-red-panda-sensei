@@ -65,6 +65,7 @@ positions are local to the anchor (x right, y up, z away from player).
   x = +0.45, z = 0, y = 0.80. `sensei_side` x = −0.95, z = 0.15,
   y = 0.80. `learner_hand` attaches to the right hand/controller
   (offset 0, 0.02, 0.08 in that space).
+- **W5a** `table`: a side table beside the mat (0.5 m × 0.4 m, top at y = 0.80, centre x = +1.05, z = +0.05), drawn with the practice area so it shows in passthrough; loose objects line up on it like a mat region. Dropping an object on Sensei moves it to `sensei_side`. Grabbing and releasing an object in the region it came from selects it.
 - **W6** Within a region, loose objects order by `slot` ascending; the
   first 4 form row 1 (z = 0), the rest row 2 (z = +0.14); each row is
   centred on the region centre independently: item i of n sits at

@@ -29,8 +29,10 @@ CATALOG = {
     "key": CatalogEntry("鍵", "かぎ", "kagi", "key"),
     "umbrella": CatalogEntry("傘", "かさ", "kasa", "umbrella"),
 }
-REGIONS = frozenset(("left", "center", "right", "learner_hand", "sensei_side"))
+REGIONS = frozenset(("left", "center", "right", "table", "learner_hand", "sensei_side"))
 PRACTICE = frozenset(("left", "center", "right"))
+# Surfaces where loose objects line up by slot: the mat regions plus the side table.
+SURFACES = PRACTICE | {"table"}
 
 
 class SceneError(ValueError):
@@ -49,7 +51,7 @@ class Scene:
         self._slots: dict[str, int] = {}
 
     def _slot(self, region: str) -> int:
-        if region not in PRACTICE:
+        if region not in SURFACES:
             return 0
         self._slots[region] = self._slots.get(region, 0) + 1
         return self._slots[region]
@@ -133,7 +135,7 @@ class Scene:
         origin = obj["container_id"] or obj["region"]
         obj["container_id"] = container_id
         obj["region"] = container["region"] if container is not None else region
-        if container is None and region in PRACTICE:
+        if container is None and region in SURFACES:
             obj["slot"] = self._slot(region)
         affected = [ident]
         if container is None:

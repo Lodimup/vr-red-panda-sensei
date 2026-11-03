@@ -5,9 +5,9 @@ type AssetLoader = (url: string) => Promise<AssetModule>;
 
 const props = [
   {url: 'https://polyfork.dev/cdn/andon-floor-lantern-b1b7ea.mjs', x: -2, z: -.9},
-  {url: 'https://polyfork.dev/cdn/floor-houseplant-8fad17.mjs', x: 1.35, z: -1.1},
-  {url: 'https://polyfork.dev/cdn/coffee-table-acc698.mjs', x: 1.65, z: -.35},
-  {url: 'https://polyfork.dev/cdn/bookshelf-5e881a.mjs', x: 1.65, z: -.35, y: .4},
+  {url: 'https://polyfork.dev/cdn/floor-houseplant-8fad17.mjs', x: 1.6, z: -1.2},
+  {url: 'https://polyfork.dev/cdn/coffee-table-acc698.mjs', x: 2.2, z: -.6},
+  {url: 'https://polyfork.dev/cdn/bookshelf-5e881a.mjs', x: 2.2, z: -.6, y: .4},
 ] as const;
 
 // Native imports keep the asset programs on Polyfork's CDN, outside the bundle.

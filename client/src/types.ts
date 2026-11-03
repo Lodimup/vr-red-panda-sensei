@@ -1,4 +1,4 @@
-export type Region = 'left' | 'center' | 'right' | 'sensei_side' | 'learner_hand';
+export type Region = 'left' | 'center' | 'right' | 'table' | 'sensei_side' | 'learner_hand';
 export interface Support {show_japanese: boolean; show_reading: boolean; show_romaji: boolean; show_translation: boolean; pace: 'normal'|'slow'; correction_style: string; language_mode: string}
 export interface Instance {id: string; catalog_id: string; region: Region; slot: number; container_id: string|null; japanese: string; reading: string; english: string}
 export interface Task {task_id: string; status: string; family: string; skill_targets: string[]; instruction: {japanese?: string; english?: string}}

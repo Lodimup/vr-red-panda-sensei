@@ -1,6 +1,8 @@
 import type { Snapshot, Region } from './types';
+/** Side table beside the mat: top at y = 0.80, like the mat, so the same drop plane serves both. */
+export const TABLE = {x:1.05, z:.05, width:.5, depth:.4};
 export interface Placement {x:number; y:number; z:number; scale:number}
-const centres: Record<Region, [number,number,number]> = {left:[-.45,.8,0],center:[0,.8,0],right:[.45,.8,0],sensei_side:[-.95,.8,.15],learner_hand:[0,.82,.08]};
+const centres: Record<Region, [number,number,number]> = {left:[-.45,.8,0],center:[0,.8,0],right:[.45,.8,0],table:[TABLE.x,.8,TABLE.z],sensei_side:[-.95,.8,.15],learner_hand:[0,.82,.08]};
 export function layout(snapshot: Snapshot): Record<string, Placement> {
   const out: Record<string, Placement> = {};
   for (const region of Object.keys(centres) as Region[]) {
@@ -23,6 +25,10 @@ export function layout(snapshot: Snapshot): Record<string, Placement> {
   return out;
 }
 export function regionAt(x:number,y:number,z:number): Region|null {
-  if(y<.75||y>1.1||z<-.25||z>.25||x<-.675||x>.675)return null;
+  if(y<.75||y>1.1)return null;
+  if(Math.abs(x-TABLE.x)<=TABLE.width/2+.03&&Math.abs(z-TABLE.z)<=TABLE.depth/2+.03)return 'table';
+  // Dropping on Sensei hands the object to Sensei.
+  if(x>=-1.25&&x<=-.72&&z>=-.2&&z<=.45)return 'sensei_side';
+  if(z<-.25||z>.25||x<-.675||x>.675)return null;
   return x<=-.225?'left':x<=.225?'center':'right';
 }
